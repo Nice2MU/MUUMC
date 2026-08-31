@@ -12,8 +12,21 @@ class WorldMemoryManager {
     this.baseDataDir = baseDataDir;
   }
 
+  _resolveServerKey(serverKey) {
+    if (serverKey) return serverKey;
+    try {
+      const { config } = require('../config/loader');
+      const host = config.minecraft?.host || '127.0.0.1';
+      const port = config.minecraft?.port || 25565;
+      return `${host}_${port}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    } catch (_) {
+      return 'default_world';
+    }
+  }
+
   _getWorldDir(serverKey) {
-    const dir = path.join(this.baseDataDir, 'worlds', serverKey);
+    const key = this._resolveServerKey(serverKey);
+    const dir = path.join(this.baseDataDir, 'worlds', key);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -105,6 +118,46 @@ class WorldMemoryManager {
     this._writeAtomicJson(filePath, chests);
     logger.info(`📦 Updated chest registry at (${coords.x}, ${coords.y}, ${coords.z}) with ${items.length} item types.`, 'WorldMemory');
     return chests[key];
+  }
+
+  // --- High-Value Discovered Ores Registry ---
+
+  getDiscoveredOres(serverKey) {
+    const filePath = path.join(this._getWorldDir(serverKey), 'discovered_ores.json');
+    return this._readAtomicJson(filePath, {});
+  }
+
+  recordDiscoveredOre(serverKey, oreName, coords) {
+    const key = `${Math.floor(coords.x)}_${Math.floor(coords.y)}_${Math.floor(coords.z)}`;
+    const filePath = path.join(this._getWorldDir(serverKey), 'discovered_ores.json');
+    const ores = this.getDiscoveredOres(serverKey);
+    if (!ores[key]) {
+      ores[key] = {
+        name: oreName,
+        coords: {
+          x: Math.floor(coords.x),
+          y: Math.floor(coords.y),
+          z: Math.floor(coords.z),
+        },
+        discovered_at: new Date().toISOString(),
+      };
+      this._writeAtomicJson(filePath, ores);
+      logger.info(`💎 [WorldMemory] Recorded discovered high-tier ore vein '${oreName}' at (${ores[key].coords.x}, ${ores[key].coords.y}, ${ores[key].coords.z}) for server [${this._resolveServerKey(serverKey)}]`, 'WorldMemory');
+    }
+    return ores[key];
+  }
+
+  removeDiscoveredOre(serverKey, coords) {
+    const key = `${Math.floor(coords.x)}_${Math.floor(coords.y)}_${Math.floor(coords.z)}`;
+    const filePath = path.join(this._getWorldDir(serverKey), 'discovered_ores.json');
+    const ores = this.getDiscoveredOres(serverKey);
+    if (ores[key]) {
+      delete ores[key];
+      this._writeAtomicJson(filePath, ores);
+      logger.info(`💎 [WorldMemory] Harvested and removed ore vein at (${coords.x}, ${coords.y}, ${coords.z}) from memory.`, 'WorldMemory');
+      return true;
+    }
+    return false;
   }
 }
 

@@ -315,3 +315,28 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
 - **Scroll Wheel**: Zoom in/out for third-person orbital perspective.
 - **Right-Click + Drag**: Pan camera across the world.
 
+---
+
+## 🏆 Battle-Tested Production Safeguards
+
+1. **🎯 0.5s Fast Digging & True Raycast Physics (`src/driver/adapter.js`)**:
+   - Targets exact block centers (`x+0.5, y+0.5, z+0.5`) without artificial vertical offsets.
+   - Digs stone and deepslate in 0.5s–0.9s per block. Requires proximity ($1.8\text{m} - 2.0\text{m}$) before digging to eliminate ghost swings.
+2. **🪵 Persistent Workstation Deployment (`src/coder/dsl.js`)**:
+   - Eliminates the repeated place-and-break cycle on Crafting Tables and Furnaces. Stations remain on the ground and are dynamically reused within 12m.
+3. **💧 Dynamic Aquifer & Lava Avoidance (`src/coder/dsl.js`)**:
+   - Detects liquids in front before digging staircase steps and rotates 90° to dry orthogonal stone headings (`+Z`, `-Z`, `-X`) to prevent drowning.
+4. **🗑️ Smart 180° Backward Trash Ejection & Blacklist (`src/driver/adapter.js`)**:
+   - Caps construction blocks (`cobblestone`, `cobbled_deepslate`, `dirt`) at 32 items.
+   - Rotates 180° backward to toss junk away from the travel path, steps 1.5m forward, and blacklists trash entity IDs to prevent re-picking.
+5. **📦 Active Loot Vacuum Sweep (`src/coder/dsl.js`)**:
+   - Sweeps and vacuums all dropped item entities within 10m of mined ore veins into inventory.
+6. **💎 Diamond Discovery Reflex & Priority Rush (`src/bot/autonomous_engine.js`)**:
+   - Instantly records spotted diamond coordinates to `discovered_ores.json`.
+   - Enforces `iron_pickaxe` / `diamond_pickaxe` requirement before breaking diamond ores (preventing stone pickaxe 0-drop deletion) and rushes diamond mining as the top priority.
+7. **⛏️ Connected Vein BFS Excavator (`src/coder/dsl.js`)**:
+   - Recursively extracts 26-neighbor connected ore clusters until 100% cleared.
+8. **🐕 Non-Interfering Digging Watchdog (`src/bot/autonomous_engine.js`)**:
+   - `if (adapter._isDigging) return;` guard prevents false anti-stall interruptions while swinging tools.
+
+

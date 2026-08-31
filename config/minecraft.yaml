@@ -17,7 +17,7 @@ bot:
     sneak: false
 
 viewer:
-  enabled: true
+  enabled: false
   port: 3007
   first_person: true
 
@@ -25,3 +25,13 @@ auto_reconnect:
   enabled: true
   max_retries: 10
   retry_delay_ms: 5000
+
+autonomous:
+  enabled: true
+  idle_timeout_ms: 3000
+  explore_radius: 16
+  gather_drops: true
+  auto_eat: true
+  auto_sleep: true
+  replant_saplings: true
+

@@ -137,10 +137,10 @@ const TOOL_DEFINITIONS = [
 ];
 
 class MCPToolHandler {
-  static async handleToolCall(name, args) {
+  static async handleToolCall(name, args, isAutonomous = false) {
     logger.info(`⚡ Handling MCP Tool: '${name}' with args: ${JSON.stringify(args)}`, 'MCPTools');
 
-    if (botClient.autonomousEngine) {
+    if (!isAutonomous && botClient.autonomousEngine) {
       botClient.autonomousEngine.notifyTaskStarted();
     }
 
@@ -164,7 +164,7 @@ class MCPToolHandler {
           throw new Error(`Unknown MCP Tool: ${name}`);
       }
     } finally {
-      if (botClient.autonomousEngine) {
+      if (!isAutonomous && botClient.autonomousEngine) {
         botClient.autonomousEngine.notifyTaskCompleted();
       }
     }
@@ -178,7 +178,19 @@ class MCPToolHandler {
     const adapter = botClient.adapter;
     const stateScanner = botClient.stateScanner;
 
-    const worldState = stateScanner ? stateScanner.getBotStatus('full') : { position: { x: 0, y: 0, z: 0 }, health: 20, food: 20 };
+    const rawState = stateScanner ? stateScanner.getBotStatus('full') : { position: { x: 0, y: 0, z: 0 }, health: 20, food: 20 };
+    const world = {
+      ...rawState,
+      getY: () => adapter ? adapter.getPosition().y : (rawState.position?.y || 64),
+      getPosition: () => adapter ? adapter.getPosition() : rawState.position,
+      hasItem: (name) => adapter ? adapter.hasItem(name) : false,
+      countItem: (name) => adapter ? adapter.countItem(name) : 0,
+      findBlocks: (opt) => adapter ? adapter.findBlocks(opt) : [],
+      findEntity: (opt) => adapter ? adapter.findEntity(opt) : null,
+      findAnimals: (maxDist) => adapter ? adapter.findAnimals(maxDist) : [],
+      findHostiles: (maxDist) => adapter ? adapter.findHostiles(maxDist) : [],
+      getBlockAt: (pos) => adapter ? adapter.getBlockAt(pos) : null,
+    };
 
     // 1. Skill Cache Check (<0.1s execution)
     const cacheMatch = skillManager.matchSkill(task);
@@ -189,7 +201,8 @@ class MCPToolHandler {
         try {
           const result = await sandbox.execute(skill.code, {
             dsl,
-            world: worldState,
+            world,
+            adapter,
             args: { ...(cacheMatch.args || {}), ...(args.parameters || {}) },
           });
           return {
@@ -199,6 +212,14 @@ class MCPToolHandler {
             result: result.result,
           };
         } catch (err) {
+          if (err.message && (err.message.includes('missing ingredients') || err.message.includes('not in inventory') || err.message.includes('Cannot craft'))) {
+            logger.warn(`⚡ Cache skill '${cacheMatch.skill_name}' could not proceed: ${err.message}. Returning error status immediately to Agent 1 planner...`, 'MCPTools');
+            return {
+              status: 'error',
+              source: 'skill_cache',
+              error: err.message,
+            };
+          }
           logger.warn(`Cache execution encountered error: ${err.message}. Falling back to AI Coder...`, 'MCPTools');
         }
       }
@@ -206,12 +227,13 @@ class MCPToolHandler {
 
     // 2. Cache Miss / Dynamic Task -> Agent 2 Coder
     logger.info(`🤖 Dispatching task to Agent 2 (qwen2.5-coder:3b): "${task}"`, 'MCPTools');
-    const generatedCode = await aiCoderAgent.generateCode(task, worldState, args);
+    const generatedCode = await aiCoderAgent.generateCode(task, rawState, args);
 
     try {
       const result = await sandbox.execute(generatedCode, {
         dsl,
-        world: worldState,
+        world,
+        adapter,
         args,
       });
       return {
@@ -227,8 +249,10 @@ class MCPToolHandler {
         failedCode: err.code || generatedCode,
         error: err,
         taskDescription: task,
-        worldState,
+        worldState: rawState,
         dsl,
+        world,
+        adapter,
         args,
       });
 

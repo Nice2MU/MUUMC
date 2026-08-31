@@ -11,6 +11,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.0",
     "axios": "^1.7.9",
+    "canvas": "^3.2.3",
     "minecraft-data": "^3.78.0",
     "mineflayer": "^4.38.0",
     "mineflayer-collectblock": "^1.6.0",

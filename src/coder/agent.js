@@ -9,17 +9,35 @@ const { config } = require('../config/loader');
 const { logger } = require('../bot/logger');
 
 const SYSTEM_PROMPT = `You are the Tactical AI Coder (Agent 2) for Muumiu Minecraft Companion.
-Your sole job is to write safe, efficient, and robust JavaScript code to accomplish the player's task in Minecraft.
+Your sole job is to write safe, efficient, and robust JavaScript code to accomplish the player's or Agent 1's task in Minecraft.
 
 Available DSL APIs (via 'dsl' parameter):
-- await dsl.navigate(x, y, z, range = 1) : Walk safely to coordinates
-- await dsl.safeDigBlock(targetBlock, options) : Approach <= 2m, check tool, look at block, and dig safely
+- await dsl.navigateXZ(x, z, range = 1) : Walk safely to 2D coordinates
+- await dsl.safeDigBlock(targetBlock, options) : Approach <= 2m, check tool, clear obstructions, look at block, and dig safely
 - await dsl.safePlaceBlock(referenceBlock, faceVector, itemToPlace) : Approach <= 2m, equip item, look at block, and place
-- await dsl.chopTree({ count: 1 }) : Finds nearby logs, chops tree upwards, and replants sapling
-- await dsl.craftItem(itemName, count = 1) : Crafts item (automatically deploys and picks up crafting table if needed)
-- await dsl.defendPlayer(playerName) : Defends player from hostile mobs
+- await dsl.chopTree({ count: 1 }) : Finds nearby logs, chops tree upwards, and replants saplings
+- await dsl.craftItem(itemName, count = 1) : Crafts item (auto-deploys and picks up crafting table if needed)
+- await dsl.smeltItem(itemName, count = 1) : Smelts raw ore in furnace with auto-fueling
+- await dsl.mineOres(oreType, count = 1) : Finds and mines target ores safely with required tool tier
+- await dsl.staircaseMineDown(targetY) : Safely digs a diagonal 1x2 staircase down to target Y level (e.g. -54)
+- await dsl.goToSurface() : Navigates safely back to the surface level (Y >= 64)
+- await dsl.digDown(distance = 10) : Safely digs down vertically with lava/hazard detection
+- await dsl.pickupNearbyItems(maxDistance = 12) : Collects dropped items on the ground
+- await dsl.avoidEnemies(distance = 16) : Evades nearby hostile monsters to a safe distance
+- await dsl.tillAndSow(x, y, z, seedType) : Tills dirt with hoe and sows seeds
+- await dsl.useDoor(doorPos) : Interacts with door to step through safely
+- await dsl.goToBed() : Sleeps in nearest bed during nighttime
+- await dsl.activateNearestBlock(blockType) : Toggles levers, buttons, or trapdoors
+- await dsl.useToolOn(toolName, targetName) : Uses an item/tool on a target entity or block (e.g. water_bucket on lava, shears on sheep)
+- await dsl.tradeWithVillager(villagerId, tradeIndex, count) : Executes trades with villagers
+- await dsl.buildStructure(blueprint, originPos) : Constructs 3D multi-level buildings from blueprints
+- await dsl.harvestAndReplantCrops() : Harvests mature crops and replants seeds
+- await dsl.giveGiftToPlayer(playerName, itemName, count = 1) : Approaches player and tosses gift item
+- await dsl.collectItem(itemEntity) : Approaches dropped item and excavates any trapping block
+- await dsl.pillarUp(height = 1, blockName = null) : Jump and place blocks under feet (1x1 tower) with microsecond physics synchronization
+- await dsl.placeTorchIfDark() : Automatically places a torch if current area is dark (light <= 7)
 - await dsl.eatIfHungry() : Eats food if hunger is below threshold
-- dsl.chat(message) : Silent log for debugging (does not spam game chat)
+- dsl.chat(message) : Silent log for debugging
 
 Available World APIs (via 'world' parameter):
 - world.position : { x, y, z } Current position
@@ -33,10 +51,12 @@ Available World APIs (via 'world' parameter):
 - world.getBlockAt(pos) : Block object at coordinate
 
 CRITICAL RULES:
-1. Write ONLY clean JavaScript code. No explanations, no markdown intro.
-2. Use 'await' on all async DSL and Adapter calls.
-3. Check world.hasItem(...) before attempting to craft or place items.
-4. Keep the code concise, direct, and deterministic.
+1. Write ONLY clean JavaScript code. No markdown explanations, no triple backticks.
+2. For crafting tasks, call ONLY 'await dsl.craftItem(itemName, count);'. DO NOT navigate to random coordinates.
+3. For navigation, always use real coordinates from world.position or world.findBlocks. Never invent random coordinates.
+4. Use 'await' on all async DSL and Adapter calls.
+5. Check world.hasItem(...) before attempting to craft or place items.
+6. Keep the code concise, direct, and deterministic.
 `;
 
 class AICoderAgent {
@@ -44,8 +64,8 @@ class AICoderAgent {
     this.cfg = customConfig || config.aiprovider.ollama;
     this.baseUrl = this.cfg.base_url || 'http://127.0.0.1:11434';
     this.model = this.cfg.model || 'qwen2.5-coder:3b';
-    this.numCtx = this.cfg.num_ctx || 16384;
-    this.temperature = this.cfg.temperature || 0.2;
+    this.numCtx = this.cfg.num_ctx || 2048;
+    this.temperature = this.cfg.temperature || 0.1;
     this.timeoutMs = this.cfg.timeout_ms || 25000;
   }
 
@@ -76,6 +96,7 @@ Write the JavaScript code:`;
           stream: false,
           options: {
             num_ctx: this.numCtx,
+            num_predict: 128,
             temperature: this.temperature,
             stop: ['```\n\n', '</code>'],
           },

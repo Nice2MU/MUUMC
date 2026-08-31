@@ -20,28 +20,30 @@ class GameWatchdog {
   async ensureHealthyTool(toolName) {
     const inv = this.adapter.getInventory();
     const clean = toolName.toLowerCase().replace(/^minecraft:/, '');
-    const tools = inv.filter(i => i.name.toLowerCase().replace(/^minecraft:/, '') === clean);
-
-    if (tools.length === 0) return true;
+    
+    // Determine tool category (e.g. 'pickaxe', 'sword', 'axe', 'shovel')
+    const category = ['pickaxe', 'sword', 'axe', 'shovel', 'hoe'].find(c => clean.includes(c));
+    const tierRank = { netherite: 6, diamond: 5, iron: 4, stone: 3, golden: 2, wooden: 1 };
 
     const currentHeld = this.adapter.getHeldItem();
-    if (currentHeld && currentHeld.name.toLowerCase().replace(/^minecraft:/, '') === clean) {
+    if (currentHeld && category && currentHeld.name.includes(category)) {
       if (currentHeld.maxDurability > 0) {
         const remaining = currentHeld.maxDurability - currentHeld.durabilityUsed;
         const ratio = remaining / currentHeld.maxDurability;
         if (ratio < this.minDurabilityPercent) {
-          logger.warn(`⚠️ Tool '${toolName}' durability is critical (${Math.round(ratio * 100)}%). Auto-switching to spare...`, 'Watchdog');
-          // Find spare with higher durability
-          const spare = tools.find(t => {
-            const spareRatio = (t.maxDurability - t.durabilityUsed) / (t.maxDurability || 1);
-            return spareRatio > this.minDurabilityPercent;
+          logger.warn(`⚠️ Tool '${currentHeld.name}' durability is critical (${Math.round(ratio * 100)}%). Auto-switching to spare/upgrade...`, 'Watchdog');
+          
+          // Find any healthier tool in the same category, prioritizing higher tiers!
+          const categoryTools = inv.filter(i => i.name.includes(category) && i.name !== currentHeld.name);
+          categoryTools.sort((a, b) => {
+            const tierA = Object.keys(tierRank).find(t => a.name.includes(t)) || 'wooden';
+            const tierB = Object.keys(tierRank).find(t => b.name.includes(t)) || 'wooden';
+            return (tierRank[tierB] || 1) - (tierRank[tierA] || 1);
           });
-          if (spare) {
-            await this.adapter.rawBot.equip(spare, 'hand');
+
+          if (categoryTools.length > 0) {
+            await this.adapter.equipItem(categoryTools[0], 'hand');
             return true;
-          } else {
-            logger.warn(`No healthy spare for '${toolName}' available!`, 'Watchdog');
-            return false;
           }
         }
       }

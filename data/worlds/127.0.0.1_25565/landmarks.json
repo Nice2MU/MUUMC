@@ -8,5 +8,15 @@
     },
     "description": "ฐานทดสอบระบบ",
     "updated_at": "2026-08-31T09:44:11.854Z"
+  },
+  "AuditBase": {
+    "name": "AuditBase",
+    "coords": {
+      "x": 100,
+      "y": 64,
+      "z": 200
+    },
+    "description": "ฐานตรวจสอบระบบ",
+    "updated_at": "2026-08-31T13:03:06.854Z"
   }
 }

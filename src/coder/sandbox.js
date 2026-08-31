@@ -63,13 +63,14 @@ class UniversalSandbox {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
     try {
+      const { Vec3 } = require('vec3');
       // Create isolated sandbox function with strict parameter scope
-      const sandboxFn = new AsyncFunction('dsl', 'world', 'args', 'signal', `
+      const sandboxFn = new AsyncFunction('dsl', 'world', 'args', 'signal', 'Vec3', 'logger', `
         if (signal.aborted) throw new Error('Execution aborted prior to start');
         ${code}
       `);
 
-      const executionPromise = sandboxFn(dsl, world, args, controller.signal);
+      const executionPromise = sandboxFn(dsl, world, args, controller.signal, Vec3, logger);
       
       const timeoutPromise = new Promise((_, reject) => {
         controller.signal.addEventListener('abort', () => {

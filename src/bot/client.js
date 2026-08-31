@@ -101,6 +101,11 @@ class MinecraftBotClient {
     this.bot.on('spawn', () => {
       logger.info('🌍 Bot spawned into the world.', 'BotClient');
       this.isSpawned = true;
+      if (this.bot.physics) {
+        this.bot.physics.stepHeight = 1.0; // Step up 1-block heights smoothly like Vanilla Auto-Jump
+        this.bot.physics.yawSpeed = 12.0;
+        this.bot.physics.pitchSpeed = 12.0;
+      }
       if (this.bot.version) {
         this.resolver.setVersion(this.bot.version);
         PluginWrappers.initMovements(this.bot, this.resolver.mcData);

@@ -28,6 +28,31 @@
     },
     "file": "craft_item.js"
   },
+  "chop_tree": {
+    "name": "chop_tree",
+    "description": "Chops nearby trees and replants saplings",
+    "category": "gathering",
+    "parameters": {
+      "count": { "type": "number", "default": 2 }
+    },
+    "file": "chop_tree.js"
+  },
+  "eat_food": {
+    "name": "eat_food",
+    "description": "Eats food if hungry",
+    "category": "survival",
+    "parameters": {},
+    "file": "eat_food.js"
+  },
+  "mine_stone": {
+    "name": "mine_stone",
+    "description": "Mines nearby stone blocks safely",
+    "category": "gathering",
+    "parameters": {
+      "count": { "type": "number", "default": 4 }
+    },
+    "file": "mine_stone.js"
+  },
   "defend_area": {
     "name": "defend_area",
     "description": "Guards the perimeter against hostile mobs",
@@ -43,5 +68,59 @@
     "category": "survival",
     "parameters": {},
     "file": "sleep_bed.js"
+  },
+  "mine_ore": {
+    "name": "mine_ore",
+    "description": "Mines specific ores or staircase mines towards target level",
+    "category": "gathering",
+    "parameters": {
+      "ore_type": { "type": "string", "default": "iron" },
+      "count": { "type": "number", "default": 4 }
+    },
+    "file": "mine_ore.js"
+  },
+  "smelt_item": {
+    "name": "smelt_item",
+    "description": "Smelts raw ores or food in furnace",
+    "category": "crafting",
+    "parameters": {
+      "item_name": { "type": "string", "default": "raw_iron" },
+      "count": { "type": "number", "default": 1 }
+    },
+    "file": "smelt_item.js"
+  },
+  "staircase_mine": {
+    "name": "staircase_mine",
+    "description": "Mines a diagonal 1x2 staircase down to target depth",
+    "category": "gathering",
+    "parameters": {
+      "target_y": { "type": "number", "default": 16 }
+    },
+    "file": "staircase_mine.js"
+  },
+  "go_surface": {
+    "name": "go_surface",
+    "description": "Navigates back to the surface level",
+    "category": "movement",
+    "parameters": {},
+    "file": "go_surface.js"
+  },
+  "swim_up": {
+    "name": "swim_up",
+    "description": "Emergency surface swimming and cave ceiling air pocket excavation",
+    "category": "survival",
+    "parameters": {},
+    "file": "swim_up.js"
+  },
+  "mine_remembered_ore": {
+    "name": "mine_remembered_ore",
+    "description": "Navigates to previously remembered ore coordinates and harvests them",
+    "category": "gathering",
+    "parameters": {
+      "x": { "type": "number", "required": true },
+      "y": { "type": "number", "required": true },
+      "z": { "type": "number", "required": true }
+    },
+    "file": "mine_remembered_ore.js"
   }
 }
