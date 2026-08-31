@@ -1,0 +1,17 @@
+{
+  "121_64_-300": {
+    "coords": {
+      "x": 121,
+      "y": 64,
+      "z": -300
+    },
+    "label": "Treasure Chest",
+    "items": [
+      {
+        "name": "diamond",
+        "count": 64
+      }
+    ],
+    "updated_at": "2026-08-31T09:44:05.461Z"
+  }
+}

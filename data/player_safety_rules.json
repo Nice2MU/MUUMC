@@ -1,0 +1,13 @@
+{
+  "friendly_fire": false,
+  "defend_on_attack": true,
+  "protected_players": ["ไนท์ทูมู", "Nice2MU"],
+  "no_griefing": true,
+  "safe_distance": 2.0,
+  "rules": [
+    "NEVER attack or damage the player",
+    "NEVER break blocks placed by the player inside home territory",
+    "ALWAYS replant saplings after chopping trees",
+    "ALWAYS prioritize personal survival and flee if HP < 6"
+  ]
+}

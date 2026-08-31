@@ -1,0 +1,21 @@
+# ==========================================================
+# Tactical AI Coder (Agent 2) Configuration for muu-mc
+# ==========================================================
+
+ollama:
+  base_url: "http://127.0.0.1:11434"
+  model: "qwen2.5-coder:3b"
+  num_ctx: 16384
+  temperature: 0.2
+  timeout_ms: 25000
+  keep_alive: "1h"
+
+sandbox:
+  step_timeout_ms: 15000
+  total_task_timeout_ms: 60000
+  auto_unwrap: true
+  max_self_healing_attempts: 1
+
+cache:
+  enabled: true
+  similarity_threshold: 0.85

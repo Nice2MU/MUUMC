@@ -1,0 +1,29 @@
+[
+  {
+    "id": "err_1788169037677",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-08-31T09:37:17.677Z"
+  },
+  {
+    "id": "err_1788169189992",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-08-31T09:39:49.992Z"
+  },
+  {
+    "id": "err_1788169445462",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-08-31T09:44:05.462Z"
+  }
+]

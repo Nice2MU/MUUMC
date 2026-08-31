@@ -1,0 +1,47 @@
+{
+  "follow_player": {
+    "name": "follow_player",
+    "description": "Follows the specified player or nearest player safely",
+    "category": "movement",
+    "parameters": {
+      "target_player": { "type": "string", "description": "Username of player to follow" },
+      "range": { "type": "number", "default": 2.0 }
+    },
+    "file": "follow_player.js"
+  },
+  "collect_drops": {
+    "name": "collect_drops",
+    "description": "Scans and collects nearby dropped items and loot",
+    "category": "gathering",
+    "parameters": {
+      "radius": { "type": "number", "default": 16 }
+    },
+    "file": "collect_drops.js"
+  },
+  "craft_item": {
+    "name": "craft_item",
+    "description": "Crafts an item with automated crafting table lifecycle",
+    "category": "crafting",
+    "parameters": {
+      "item_name": { "type": "string", "required": true },
+      "count": { "type": "number", "default": 1 }
+    },
+    "file": "craft_item.js"
+  },
+  "defend_area": {
+    "name": "defend_area",
+    "description": "Guards the perimeter against hostile mobs",
+    "category": "combat",
+    "parameters": {
+      "radius": { "type": "number", "default": 16 }
+    },
+    "file": "defend_area.js"
+  },
+  "sleep_bed": {
+    "name": "sleep_bed",
+    "description": "Finds nearest bed and sleeps through the night",
+    "category": "survival",
+    "parameters": {},
+    "file": "sleep_bed.js"
+  }
+}
