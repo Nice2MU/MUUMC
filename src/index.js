@@ -31,10 +31,16 @@ process.stdout.write = function (chunk, encoding, callback) {
 };
 
 process.on('uncaughtException', (err) => {
+  if (err && (err.code === 'EPIPE' || err.message?.includes('EPIPE'))) {
+    process.exit(0); // Parent process closed pipe, exit cleanly without looping
+  }
   logger.error(`Uncaught Exception: ${err.message}`, 'MCPServer');
 });
 
 process.on('unhandledRejection', (reason) => {
+  if (reason && (reason.code === 'EPIPE' || String(reason).includes('EPIPE'))) {
+    process.exit(0);
+  }
   const msg = reason instanceof Error ? reason.message : String(reason);
   logger.warn(`Unhandled Rejection: ${msg}`, 'MCPServer');
 });
