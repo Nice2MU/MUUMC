@@ -67,6 +67,7 @@ async function runTests() {
     world: {
       ...dummyWorld,
       hasItem: (name) => name === 'oak_log',
+      countItem: (name) => name === 'oak_log' ? 5 : 0,
     },
   });
   assert(liveRunRes.success === true, 'Live generated code executed with 100% syntax validity');

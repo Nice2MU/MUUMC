@@ -1,8 +1,4 @@
-/**
- * Mineflayer Bot Lifecycle & Connection Manager.
- * Orchestrates connection, plugins, reconnection, and subsystem wiring.
- */
-
+const path = require('path');
 const mineflayer = require('mineflayer');
 const { logger } = require('./logger');
 const { config } = require('../config/loader');
@@ -13,6 +9,7 @@ const { GameWatchdog } = require('./watchdog');
 const { GameStateScanner } = require('./state');
 const { SafeDSL } = require('../coder/dsl');
 const { AutonomousEngine } = require('./autonomous_engine');
+const { InGameChatCompanion } = require('./chat_companion');
 
 class MinecraftBotClient {
   constructor(customConfig = null) {
@@ -24,6 +21,7 @@ class MinecraftBotClient {
     this.stateScanner = null;
     this.dsl = null;
     this.autonomousEngine = new AutonomousEngine(this);
+    this.chatCompanion = new InGameChatCompanion(this);
     this.isConnected = false;
     this.isSpawned = false;
     this.retryCount = 0;
@@ -39,7 +37,7 @@ class MinecraftBotClient {
     const srv = this.config.server;
     const botCfg = this.config.bot;
 
-    logger.info(`Connecting bot '${botCfg.username}' to ${srv.host}:${srv.port} (version: ${srv.version || 'auto'})...`, 'BotClient');
+    logger.info(`Connecting bot '${botCfg.username}' to ${srv.host}:${srv.port} (version: ${srv.version || 'auto'}, auth: ${srv.auth || 'offline'})...`, 'BotClient');
 
     const botOptions = {
       host: srv.host || '127.0.0.1',
@@ -48,6 +46,15 @@ class MinecraftBotClient {
       auth: srv.auth || 'offline',
       viewDistance: botCfg.view_distance || 'far',
       checkTimeoutInterval: botCfg.check_timeout_interval || 30000,
+      profilesFolder: path.resolve(__dirname, '../../data/auth_cache'),
+      onMsaCode: (data) => {
+        logger.info(`=======================================================`, 'Auth');
+        logger.info(`🔑 MICROSOFT ACCOUNT LOGIN REQUIRED:`, 'Auth');
+        logger.info(`🌐 1. Open web browser: ${data.verification_uri || 'https://www.microsoft.com/link'}`, 'Auth');
+        logger.info(`🔢 2. Enter code: ${data.user_code}`, 'Auth');
+        logger.info(`⏳ Waiting for authorization...`, 'Auth');
+        logger.info(`=======================================================`, 'Auth');
+      },
     };
 
     if (srv.version) {
@@ -137,6 +144,61 @@ class MinecraftBotClient {
 
     this.bot.on('error', (err) => {
       logger.error(`Bot error: ${err.message}`, 'BotClient');
+    });
+
+    // 💬 In-Game Chat Dual-Agent Pipeline (User ➔ A1 Brain ➔ A2 AI Coder ➔ Bot)
+    this.bot.on('chat', async (username, message) => {
+      if (!username || username === this.bot.username) return;
+      const cleanMsg = message.trim();
+      logger.info(`💬 In-Game Chat from <${username}>: "${cleanMsg}"`, 'InGameChat');
+
+      // Preempt autonomous engine
+      this.autonomousEngine.preempt();
+
+      try {
+        // 👑 1. Agent 1 (Executive Brain) processes dialogue and formulates decision
+        const decision = await this.chatCompanion.processPlayerDialogue(username, cleanMsg);
+
+        // A1 chats back immediately in Minecraft chat
+        if (decision.reply) {
+          this.bot.chat(decision.reply);
+        }
+
+        // Quick action dispatch
+        if (decision.taskType === 'quick_action') {
+          if (decision.action === 'follow') await this.adapter.followPlayer(username, 2.0);
+          else if (decision.action === 'stop') this.adapter.stopMovement();
+          else if (decision.action === 'look_at') {
+            const p = this.adapter.findEntity({ name: username, type: 'player' });
+            if (p) await this.adapter.lookAt(p.position);
+          } else if (decision.action === 'jump') {
+            this.bot.setControlState('jump', true);
+            setTimeout(() => this.bot && this.bot.setControlState('jump', false), 350);
+          }
+          return;
+        }
+
+        // 🧑‍💻 2. Agent 1 commands Agent 2 (Tactical AI Coder) to write code and execute
+        if (decision.taskType === 'agent2_task' && decision.taskDescription) {
+          const { MCPToolHandler } = require('../mcp/tools');
+          logger.info(`👑 [Agent 1 ➔ Agent 2] Dispatching task: "${decision.taskDescription}"`, 'InGameChat');
+          const result = await MCPToolHandler.handleToolCall('muu_mc_execute_task', {
+            task: decision.taskDescription,
+            context_hint: `In-game request from ${username}: "${cleanMsg}"`,
+          });
+
+          // 👑 3. Agent 1 dynamically formulates completion report back to player
+          if (result && (result.status === 'success' || result.status === 'cached' || result.status === 'self_healed')) {
+            const doneMsg = await this.chatCompanion.generateCompletionReply(username, decision.taskDescription);
+            if (doneMsg) this.bot.chat(doneMsg);
+          } else if (result && result.status === 'error') {
+            this.bot.chat('แงง อันนี้เค้าทำติดปัญหาแป๊บนึงง่ะ 🥺');
+          }
+        }
+      } catch (err) {
+        logger.error(`Error in Dual-Agent chat processing: ${err.message}`, 'InGameChat');
+        this.bot.chat(`เค้าได้ยินแล้วน้าคุณ ${username} 🌸✨`);
+      }
     });
   }
 

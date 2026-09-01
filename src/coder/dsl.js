@@ -87,22 +87,43 @@ class SafeDSL {
       return true;
     }
 
-    // 1. Approach only if outside natural human reach (> 3.2m)
+    // 1. Natural Arm Reach Approach (Minecraft reach = 4.5m, comfortable distance = 2.4m - 3.5m)
     let dist = this.adapter.distanceTo(blockPos);
-    if (dist > 3.2) {
-      await this.adapter.goto(blockPos.x, blockPos.y, blockPos.z, 2.0, 2500).catch(() => {});
+    if (dist > 3.8) {
+      const navTimeout = Math.max(3500, Math.min(8000, Math.round(dist * 700)));
+      await this.adapter.gotoXZ(blockPos.x, blockPos.z, 2.8, navTimeout).catch(() => {});
       dist = this.adapter.distanceTo(blockPos);
     }
-    // Hard Reach Limit: Never attempt to dig blocks beyond 4.2m
-    if (dist > 4.2) {
-      logger.warn(`Target block at (${blockPos.x}, ${blockPos.y}, ${blockPos.z}) is out of reach (${dist.toFixed(1)}m > 4.2m). Skipping.`, 'SafeDSL');
+    // Hard Reach Limit: (Minecraft Vanilla max reach = 4.5m)
+    if (dist > 4.5) {
+      logger.warn(`Target block at (${blockPos.x}, ${blockPos.y}, ${blockPos.z}) is out of reach (${dist.toFixed(1)}m > 4.5m). Skipping.`, 'SafeDSL');
       return false;
     }
 
-    // 2. Verify target block exists and is diggable
+    // 2. Threat check: never stand still digging while hostiles are nearby
+    const threats = this.adapter.findHostiles(7);
+    if (threats.length > 0) {
+      logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' is within 7m! Halting dig to fight...`, 'SafeDSL');
+      await this.adapter.autoEquipArmor().catch(() => {});
+      await this.adapter.equipHighestAttackWeapon().catch(() => {});
+      await this.adapter.attackEntity(threats[0]);
+      return false;
+    }
+
+    // 3. Verify target block exists and is diggable
     const freshTarget = this.adapter.getBlockAt(blockPos);
     if (!freshTarget || freshTarget.name === 'air' || freshTarget.name === 'cave_air' || freshTarget.name === 'void_air') {
       return true; // Already broken
+    }
+
+    // 4. Line of sight clearance: If target is obstructed by a solid block in front, clear the obstruction first!
+    if (this.adapter.rawBot && this.adapter.rawBot.blockAtCursor) {
+      await this.adapter.lookAt(new Vec3(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5));
+      const cursor = this.adapter.rawBot.blockAtCursor(4.5);
+      if (cursor && cursor.position && !cursor.position.equals(blockPos) && cursor.diggable && cursor.name !== 'air' && cursor.name !== 'cave_air' && !cursor.name.includes('water') && !cursor.name.includes('lava') && cursor.name !== 'bedrock') {
+        logger.info(`⛏️ Clearing obstructing block '${cursor.name}' at (${cursor.position.x}, ${cursor.position.y}, ${cursor.position.z}) in front of target...`, 'SafeDSL');
+        await this.adapter.digBlock(cursor);
+      }
     }
 
     logger.info(`⛏️ Digging block '${freshTarget.name}' at (${blockPos.x}, ${blockPos.y}, ${blockPos.z})...`, 'SafeDSL');
@@ -218,35 +239,78 @@ class SafeDSL {
     const count = options.count || 1;
     let chopped = 0;
 
+    // 0. Auto-Equip / Auto-Craft Best Axe before chopping!
+    const hasAnyAxe = this.adapter.hasItem('diamond_axe') || this.adapter.hasItem('iron_axe') || this.adapter.hasItem('stone_axe') || this.adapter.hasItem('wooden_axe');
+    if (!hasAnyAxe) {
+      if (this.adapter.countItem('cobblestone') >= 3 && (this.adapter.hasItem('stick') || this.adapter.hasItem('oak_planks') || this.adapter.hasItem('spruce_planks') || this.adapter.hasItem('birch_planks')) && (this.adapter.hasItem('crafting_table') || this.adapter.findBlocks({ matching: 'crafting_table', maxDistance: 12, count: 1 }).length > 0)) {
+        await this.craftItem('stone_axe', 1).catch(() => {});
+      } else if ((this.adapter.countItem('oak_planks') >= 3 || this.adapter.countItem('spruce_planks') >= 3 || this.adapter.countItem('birch_planks') >= 3) && (this.adapter.hasItem('crafting_table') || this.adapter.findBlocks({ matching: 'crafting_table', maxDistance: 12, count: 1 }).length > 0)) {
+        await this.craftItem('wooden_axe', 1).catch(() => {});
+      }
+    }
+
     const logTypes = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'cherry_log', 'mangrove_log'];
     
     for (let i = 0; i < count; i++) {
-      let logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 10 });
+      let logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 15 });
       if (logs.length === 0 && this.adapter.getPosition().y < 62) {
         logger.info('🌲 Bot is underground. Navigating up towards surface to reach trees...', 'SafeDSL');
         await this.goToSurface();
-        logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 10 });
+        logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 15 });
       }
 
+      if (!this._unreachableTreePositions) this._unreachableTreePositions = new Map();
+      const now = Date.now();
+      logs = logs.filter(l => {
+        const key = `${l.x},${l.y},${l.z}`;
+        return !this._unreachableTreePositions.has(key) || this._unreachableTreePositions.get(key) <= now;
+      });
+
       if (logs.length === 0) {
-        logger.warn('No trees found within 64 blocks.', 'SafeDSL');
+        logger.warn('No reachable trees found within 64 blocks.', 'SafeDSL');
         break;
       }
 
-      // Sort by proximity
-      logs.sort((a, b) => this.adapter.distanceTo(a) - this.adapter.distanceTo(b));
+      // Prioritize grounded trees (rooted in dirt/grass) and lowest log in each trunk
+      logs.sort((a, b) => {
+        const belowA = this.adapter.getBlockAt(new Vec3(a.x, a.y - 1, a.z));
+        const belowB = this.adapter.getBlockAt(new Vec3(b.x, b.y - 1, b.z));
+        const isRootA = belowA && (belowA.name === 'dirt' || belowA.name === 'grass_block' || belowA.name === 'podzol' || belowA.name.includes('dirt'));
+        const isRootB = belowB && (belowB.name === 'dirt' || belowB.name === 'grass_block' || belowB.name === 'podzol' || belowB.name.includes('dirt'));
+        if (isRootA && !isRootB) return -1;
+        if (!isRootA && isRootB) return 1;
+        if (a.y !== b.y) return a.y - b.y; // Lowest log first
+        return this.adapter.distanceTo(a) - this.adapter.distanceTo(b);
+      });
       const targetLog = logs[0];
 
-      await this.safeDigBlock(targetLog);
-      // Check if there are logs directly above (tree trunk within natural human standing reach <= 2.2m)
+      // Navigate to tree only if outside comfortable swinging reach (> 3.6m)
+      const initialDist = this.adapter.distanceTo(targetLog);
+      if (initialDist > 3.6) {
+        const navTime = Math.max(4000, Math.min(10000, Math.round(initialDist * 800)));
+        await this.adapter.gotoXZ(targetLog.x, targetLog.z, 2.6, navTime).catch(() => {});
+      }
+
+      if (this.adapter.distanceTo(targetLog) > 4.5) {
+        logger.warn(`Tree at (${targetLog.x}, ${targetLog.y}, ${targetLog.z}) unreachable. Blacklisting for 60s...`, 'SafeDSL');
+        this._unreachableTreePositions.set(`${targetLog.x},${targetLog.y},${targetLog.z}`, Date.now() + 60000);
+        continue;
+      }
+
+      const digResult = await this.safeDigBlock(targetLog);
+      if (!digResult) {
+        this._unreachableTreePositions.set(`${targetLog.x},${targetLog.y},${targetLog.z}`, Date.now() + 60000);
+        continue;
+      }
+      chopped++;
+      // Check if there are logs directly above (tree trunk within natural human standing reach <= 2.8m)
       let abovePos = new Vec3(targetLog.x, targetLog.y + 1, targetLog.z);
       while (chopped < count) {
         const aboveBlock = this.adapter.getBlockAt(abovePos);
         if (aboveBlock && this.resolver.isLog(aboveBlock.name)) {
           const heightDiff = abovePos.y - this.adapter.getPosition().y;
-          // Normal human reach limit: cannot reach logs > 2.2 blocks above feet
-          if (heightDiff > 2.2) {
-            logger.info('🌲 Upper tree logs are out of natural standing reach. Finishing chop cycle.', 'SafeDSL');
+          // Normal human reach limit: cannot reach logs > 2.8 blocks above feet
+          if (heightDiff > 2.8) {
             break;
           }
           await this.safeDigBlock(aboveBlock);
@@ -322,23 +386,76 @@ class SafeDSL {
     }
 
     // 2. Auto-craft sticks if needed for tools / torches / ladders
-    const needsSticks = clean === 'torch' || clean.includes('pickaxe') || clean.includes('axe') ||
-                        clean.includes('sword') || clean.includes('shovel') || clean.includes('hoe');
+    const isTool = clean.includes('pickaxe') || clean.includes('axe') || clean.includes('shovel') || clean.includes('hoe');
+    const isSword = clean.includes('sword');
+    const isTorch = clean === 'torch';
+    const requiredSticks = isTool ? (count * 2) : (isSword ? count : (isTorch ? Math.ceil(count / 4) : count));
 
-    if (needsSticks && this.adapter.countItem('stick') < 2) {
+    if ((isTool || isSword || isTorch) && this.adapter.countItem('stick') < requiredSticks) {
+      const neededSticks = requiredSticks - this.adapter.countItem('stick');
+      const batchesNeeded = Math.ceil(neededSticks / 4);
+
+      // Make sure we have enough planks for sticks
+      let currentPlanks = 0;
+      for (const p of plankTypes) currentPlanks += this.adapter.countItem(p);
+      if (currentPlanks < (batchesNeeded * 2)) {
+        const hasLog = logTypes.find(l => this.adapter.hasItem(l));
+        if (hasLog) {
+          const targetPlank = hasLog.replace('_log', '_planks');
+          const pObj = this.resolver.getItemByName(targetPlank);
+          const pRecipes = bot.recipesFor(pObj.id, null, 1, null);
+          if (pRecipes.length > 0) {
+            await Promise.race([
+              bot.craft(pRecipes[0], 1, null),
+              new Promise(r => setTimeout(r, 400))
+            ]).catch(() => {});
+            logger.info(`🔨 Auto-crafted ${targetPlank} from ${hasLog} for sticks`, 'SafeDSL');
+          }
+        }
+      }
+
       const availablePlank = plankTypes.find(p => this.adapter.hasItem(p));
       if (availablePlank) {
         const stickObj = this.resolver.getItemByName('stick');
         const stickRecipes = bot.recipesFor(stickObj.id, null, 1, null);
         if (stickRecipes.length > 0) {
-          await Promise.race([
-            bot.craft(stickRecipes[0], 1, null),
-            new Promise(r => setTimeout(r, 400))
-          ]).catch(() => {});
-          logger.info('🔨 Auto-crafted Sticks from Planks for recipe prerequisite.', 'SafeDSL');
+          for (let b = 0; b < batchesNeeded; b++) {
+            await Promise.race([
+              bot.craft(stickRecipes[0], 1, null),
+              new Promise(r => setTimeout(r, 400))
+            ]).catch(() => {});
+          }
+          logger.info(`🔨 Auto-crafted Sticks from Planks (${batchesNeeded} batches, ${batchesNeeded * 4} sticks) for recipe prerequisite.`, 'SafeDSL');
         }
       }
     }
+  }
+
+  isSolidFloor(block) {
+    if (!block || !block.name) return false;
+    const nonSolid = [
+      'air', 'cave_air', 'void_air', 'water', 'flowing_water', 'lava', 'flowing_lava',
+      'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush',
+      'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'red_tulip',
+      'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',
+      'lily_of_the_valley', 'sunflower', 'lilac', 'rose_bush', 'peony',
+      'torch', 'wall_torch', 'redstone_torch', 'redstone_wire', 'rail', 'sugar_cane',
+      'sweet_berry_bush', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant',
+      'snow', 'vine', 'hanging_roots'
+    ];
+    return !nonSolid.includes(block.name);
+  }
+
+  isPassableFoliage(block) {
+    if (!block || !block.name) return false;
+    const foliage = [
+      'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush',
+      'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'red_tulip',
+      'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',
+      'lily_of_the_valley', 'sunflower', 'lilac', 'rose_bush', 'peony',
+      'torch', 'wall_torch', 'snow'
+    ];
+    return foliage.includes(block.name);
   }
 
   /**
@@ -359,8 +476,10 @@ class SafeDSL {
           const space = this.adapter.getBlockAt(pos);
           const floor = this.adapter.getBlockAt(pos.offset(0, -1, 0));
 
-          if (space && (space.name === 'air' || space.name === 'cave_air' || space.name === 'torch') &&
-              floor && floor.name !== 'air' && floor.name !== 'cave_air' && floor.name !== 'water' && floor.name !== 'lava' && floor.name !== 'torch') {
+          const isOpenSpace = space && (space.name === 'air' || space.name === 'cave_air' || this.isPassableFoliage(space));
+          const isSolidFloor = this.isSolidFloor(floor);
+
+          if (isOpenSpace && isSolidFloor) {
             const dist = this.adapter.distanceTo(pos);
             candidates.push({ floor, targetPos: pos, dist });
           }
@@ -382,11 +501,19 @@ class SafeDSL {
    * Crafts an item with automated Crafting Table deploy & pickup lifecycle.
    */
   async craftItem(itemName, count = 1) {
-    const itemObj = this.resolver.getItemByName(itemName);
-    if (!itemObj) throw new Error(`Unknown item name: '${itemName}'`);
+    let targetName = itemName;
+    if (itemName === 'planks' || itemName === 'oak_planks' || itemName === 'wood_planks') {
+      const logTypes = ['spruce_log', 'birch_log', 'oak_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'cherry_log', 'mangrove_log'];
+      const availableLog = logTypes.find(l => this.adapter.hasItem(l));
+      if (availableLog) {
+        targetName = availableLog.replace('_log', '_planks');
+      }
+    }
+    const itemObj = this.resolver.getItemByName(targetName);
+    if (!itemObj) throw new Error(`Unknown item name: '${targetName}'`);
 
     // Ensure prerequisite ingredients (sticks, planks) exist first
-    await this.ensureIngredients(itemName, count);
+    await this.ensureIngredients(targetName, count);
 
     const bot = this.adapter.rawBot;
     const allRecipes = bot.recipesAll(itemObj.id, null, true);
@@ -425,7 +552,7 @@ class SafeDSL {
           const spot = await this.findDeploySpot();
           if (spot && spot.floor) {
             const curSpace = this.adapter.getBlockAt(spot.targetPos);
-            if (curSpace && curSpace.name === 'torch') {
+            if (curSpace && this.isPassableFoliage(curSpace)) {
               await this.safeDigBlock(curSpace).catch(() => {});
             }
             const bPos = this.adapter.getPosition();
@@ -509,9 +636,29 @@ class SafeDSL {
     }
 
     // Wait for server inventory sync
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 300));
+
+    if (placedTablePos) {
+      this._activeCraftingTablePos = placedTablePos;
+    }
 
     return { success: this.adapter.hasItem(itemName), crafted: itemName, count };
+  }
+
+  /**
+   * 📦 Tidily packs up deployed crafting table before traveling or descending into mines.
+   */
+  async packUpCraftingTable() {
+    const nearby = this.adapter.findBlocks({ matching: 'crafting_table', maxDistance: 5.0, count: 1 });
+    if (nearby.length > 0) {
+      const table = this.adapter.getBlockAt(nearby[0]);
+      if (table && table.name === 'crafting_table') {
+        logger.info(`📦 [Housekeeping] Packing up Crafting Table at (${nearby[0].x}, ${nearby[0].y}, ${nearby[0].z}) before moving...`, 'SafeDSL');
+        await this.safeDigBlock(table).catch(() => {});
+        await this.navigateXZ(nearby[0].x + 0.5, nearby[0].z + 0.5, 0.4, 2000).catch(() => {});
+      }
+    }
+    this._activeCraftingTablePos = null;
   }
 
   /**
@@ -633,6 +780,16 @@ class SafeDSL {
 
     furnace.close();
 
+    // 3. Clean Housekeeping: Pick up the deployed Furnace so we NEVER leave it behind!
+    if (placedFurnacePos && furnaceBlock) {
+      logger.info('📦 [Housekeeping] Packing up Furnace back into inventory...', 'SafeDSL');
+      const freshFurnace = this.adapter.getBlockAt(placedFurnacePos);
+      if (freshFurnace && (freshFurnace.name === 'furnace' || freshFurnace.name === 'lit_furnace')) {
+        await this.safeDigBlock(freshFurnace).catch(() => {});
+        await this.navigateXZ(placedFurnacePos.x + 0.5, placedFurnacePos.z + 0.5, 0.4, 2000).catch(() => {});
+      }
+    }
+
     return { success: true, smelted: itemName, count: collected };
   }
 
@@ -671,7 +828,14 @@ class SafeDSL {
     }
 
     const blocks = this.adapter.findBlocks({ matching: allowedOres, maxDistance, count: 20 });
+    const now = Date.now();
+    if (!this._unreachableOrePositions) this._unreachableOrePositions = new Map();
+
     return blocks.filter(bPos => {
+      const key = `${bPos.x},${bPos.y},${bPos.z}`;
+      if (this._unreachableOrePositions.has(key) && this._unreachableOrePositions.get(key) > now) {
+        return false;
+      }
       const neighbors = [
         new Vec3(bPos.x + 1, bPos.y, bPos.z),
         new Vec3(bPos.x - 1, bPos.y, bPos.z),
@@ -692,11 +856,14 @@ class SafeDSL {
    * then steps over to vacuum all dropped loot into inventory.
    */
   async mineConnectedVein(startPos, oreNames) {
+    if (!this._unreachableOrePositions) this._unreachableOrePositions = new Map();
+
     // 1. Approach vein first so bot is standing right next to it before digging
     if (this.adapter.distanceTo(startPos) > 3.0) {
       await this.adapter.goto(startPos.x, startPos.y, startPos.z, 2.0, 3500).catch(() => {});
       if (this.adapter.distanceTo(startPos) > 3.8) {
         logger.info(`Cannot reach ore vein at (${startPos.x}, ${startPos.y}, ${startPos.z}) (distance: ${this.adapter.distanceTo(startPos).toFixed(1)}m). Skipping unreachable vein.`, 'SafeDSL');
+        this._unreachableOrePositions.set(`${startPos.x},${startPos.y},${startPos.z}`, Date.now() + 60000);
         return 0;
       }
     }
@@ -707,6 +874,16 @@ class SafeDSL {
     let minedCount = 0;
 
     while (queue.length > 0 && minedCount < 16) {
+      // Threat check: If attacked or mob approached within 8m, halt vein mining immediately!
+      const threats = this.adapter.findHostiles(8);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' approached during vein mining! Halting vein extraction to fight...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+        break;
+      }
+
       const current = queue.shift();
       const block = this.adapter.getBlockAt(current);
       if (block && oreNames.includes(block.name)) {
@@ -787,6 +964,16 @@ class SafeDSL {
     let mined = 0;
     for (const bPos of exposed) {
       if (mined >= maxCount) break;
+
+      const threats = this.adapter.findHostiles(8);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' in cave! Halting ore gathering to fight...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+        break; // Break the whole ore loop to prioritize combat
+      }
+
       const bObj = this.adapter.getBlockAt(bPos);
       if (bObj && bObj.name !== 'air' && bObj.name !== 'cave_air') {
         const minedInVein = await this.mineConnectedVein(bPos, [bObj.name, `deepslate_${bObj.name.replace('deepslate_', '')}`]);
@@ -821,23 +1008,52 @@ class SafeDSL {
     }
 
     if (targetBlocks.length === 0) {
-      logger.info(`No ${oreType} ores visible nearby. Digging staircase down...`, 'SafeDSL');
       const currentY = this.adapter.getPosition().y;
-      const targetY = currentY <= -50 ? -54 : (currentY - 4);
-      return await this.staircaseMineDown(targetY);
+      if (currentY <= -53) {
+        logger.info(`💎 Already at optimal Diamond depth Y=${Math.round(currentY)} (above bedrock). Switching to horizontal Fishbone/Strip Mining!`, 'SafeDSL');
+        return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+      }
+      logger.info(`No ${oreType} ores visible nearby. Descending towards Y=${isDiamond ? -54 : 16}...`, 'SafeDSL');
+      return await this.mineStrategically(oreType, isDiamond ? -54 : 16);
     }
 
     // Sort by closest distance
     targetBlocks.sort((a, b) => this.adapter.distanceTo(a) - this.adapter.distanceTo(b));
 
     let totalMined = 0;
+    let interruptedByThreat = false;
+
     for (const bPos of targetBlocks) {
+      const threats = this.adapter.findHostiles(8);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' in area! Halting ore gathering to fight...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+        interruptedByThreat = true;
+        break;
+      }
+
       const bObj = this.adapter.getBlockAt(bPos);
       if (bObj && (oreNames.includes(bObj.name) || bObj.name.includes(oreType) || isDiamond)) {
         const minedInVein = await this.mineConnectedVein(bPos, isDiamond ? ['diamond_ore', 'deepslate_diamond_ore'] : oreNames);
         totalMined += minedInVein;
         if (totalMined >= count) break;
       }
+    }
+
+    if (interruptedByThreat) {
+      return { success: false, reason: 'interrupted_by_combat' };
+    }
+
+    if (totalMined === 0) {
+      const currentY = this.adapter.getPosition().y;
+      if (currentY <= -53) {
+        logger.info(`All visible ${oreType} ores were unreachable. Switching to horizontal Fishbone Mining at Y=${Math.round(currentY)}...`, 'SafeDSL');
+        return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+      }
+      logger.info(`All visible ${oreType} ores were unreachable. Descending towards Y=${isDiamond ? -54 : 16}...`, 'SafeDSL');
+      return await this.mineStrategically(oreType, isDiamond ? -54 : 16);
     }
 
     return { success: totalMined > 0, mined: totalMined };
@@ -938,14 +1154,22 @@ class SafeDSL {
    * Safely mines a 1x2 diagonal staircase downwards to target depth.
    */
   async staircaseMineDown(targetY = -54) {
+    await this.packUpCraftingTable().catch(() => {});
     const current = this.adapter.getPosition();
-    const effectiveTargetY = Math.min(targetY, Math.round(current.y) - 2);
+    const safeTargetY = Math.max(-54, targetY);
 
-    // 1. Opportunistic Cave Exploration: If exposed ores are already visible nearby, mine them!
-    const initialOres = this.findNearbyExposedOres(12);
-    if (initialOres.length > 0) {
-      logger.info(`💎 Detected ${initialOres.length} exposed ores in nearby cave! Mining cave ores first...`, 'SafeDSL');
-      await this.mineAllNearbyOres(12, 6);
+    if (Math.round(current.y) <= safeTargetY) {
+      logger.info(`🛑 [Safety Floor] Reached safe deep mining floor (Y=${Math.round(current.y)} >= -54, above Bedrock). Halting descent to prevent hitting Bedrock!`, 'SafeDSL');
+      return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+    }
+
+    const effectiveTargetY = Math.max(-54, Math.min(safeTargetY, Math.round(current.y) - 2));
+
+    // 1. Opportunistic Cave Exploration: If open cave or exposed ores are visible, explore the cave!
+    const initialOres = this.findNearbyExposedOres(14);
+    if (initialOres.length >= 3 && Math.round(current.y) < 60) {
+      logger.info(`🦇 [Cave Discovery] Detected ${initialOres.length} exposed ores in open cave system! Halting staircase to explore cave...`, 'SafeDSL');
+      return await this.exploreCave({ maxSteps: 25, maxDurationSec: 60 });
     }
 
     logger.info(`⛏️ Digging safe staircase down from Y=${Math.round(current.y)} towards target Y=${effectiveTargetY}...`, 'SafeDSL');
@@ -970,6 +1194,16 @@ class SafeDSL {
     }
 
     for (let step = 0; step < 4; step++) {
+      // Threat check: If attacked or mob approached within 8m, halt staircase digging immediately!
+      const threats = this.adapter.findHostiles(8);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' in mine shaft! Halting staircase digging to fight...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+        break;
+      }
+
       const pos = this.adapter.getPosition();
       if (pos.y <= effectiveTargetY && step >= 2) break;
 
@@ -1018,6 +1252,352 @@ class SafeDSL {
       }
     }
     return { reached: this.adapter.getPosition().y <= targetY, depth: this.adapter.getPosition().y };
+  }
+
+  /**
+   * 🐟 Branch / Fishbone Mining: Excavates a main tunnel and side branches every 3 blocks.
+   * Maximizes ore discovery efficiency at optimal mining depth (e.g. Y=16 or Y=-54).
+   */
+  async branchMine(options = {}) {
+    await this.packUpCraftingTable().catch(() => {});
+    const mainLength = options.length || 12;
+    const branchSpacing = options.spacing || 3;
+    const branchLength = options.branchLength || 5;
+    const initialPos = this.adapter.getPosition();
+    const currentY = Math.round(initialPos.y);
+
+    logger.info(`🐟 [Fishbone Mining] Starting Branch Mining at Y=${currentY} (Main: ${mainLength}m, Branches: ${branchLength}m every ${branchSpacing}m)...`, 'SafeDSL');
+
+    const forwardDir = new Vec3(1, 0, 0);
+    const leftDir = new Vec3(0, 0, 1);
+    const rightDir = new Vec3(0, 0, -1);
+
+    let totalOresFound = 0;
+
+    for (let step = 0; step < mainLength; step++) {
+      // Threat check
+      const threats = this.adapter.findHostiles(8);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' in mine branch! Halting mining to engage...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+        break;
+      }
+
+      const curPos = this.adapter.getPosition();
+      // Reach forward: Dig 2 blocks ahead from standing position using full arm reach!
+      const farHead = this.adapter.getBlockAt(curPos.offset(forwardDir.x * 2, 1, forwardDir.z * 2));
+      const nearHead = this.adapter.getBlockAt(curPos.offset(forwardDir.x, 1, forwardDir.z));
+      const farFeet = this.adapter.getBlockAt(curPos.offset(forwardDir.x * 2, 0, forwardDir.z * 2));
+      const nearFeet = this.adapter.getBlockAt(curPos.offset(forwardDir.x, 0, forwardDir.z));
+
+      if (farHead && farHead.name !== 'air' && !farHead.name.includes('water')) await this.safeDigBlock(farHead);
+      if (nearHead && nearHead.name !== 'air' && !nearHead.name.includes('water')) await this.safeDigBlock(nearHead);
+      if (farFeet && farFeet.name !== 'air' && !farFeet.name.includes('water')) await this.safeDigBlock(farFeet);
+      if (nearFeet && nearFeet.name !== 'air' && !nearFeet.name.includes('water')) await this.safeDigBlock(nearFeet);
+
+      await this.navigateXZ(curPos.x + forwardDir.x, curPos.z + forwardDir.z, 0.4, 2000);
+
+      // Place torch along main tunnel
+      if (step % 5 === 0 && this.adapter.shouldPlaceTorch(6)) {
+        const floor = this.adapter.getBlockAt(this.adapter.getPosition().offset(0, -1, 0));
+        if (floor && floor.name !== 'air' && floor.name !== 'cave_air' && !floor.name.includes('water')) {
+          await this.safePlaceBlock(floor, new Vec3(0, 1, 0), 'torch');
+        }
+      }
+
+      // Check for exposed ores along main tunnel
+      const exposed = this.findNearbyExposedOres(6);
+      if (exposed.length > 0) {
+        const mined = await this.mineAllNearbyOres(8, 4);
+        totalOresFound += mined;
+      }
+
+      // Every branchSpacing blocks, dig side branches to the left and right!
+      if (step > 0 && step % branchSpacing === 0) {
+        const branchHubPos = this.adapter.getPosition();
+
+        // 1. Left Branch (Reaching 2 blocks deep per step)
+        logger.info(`🌿 Digging left branch at step ${step} (${branchLength}m)...`, 'SafeDSL');
+        for (let b = 0; b < branchLength; b += 2) {
+          const bPos = this.adapter.getPosition();
+          const bFarHead = this.adapter.getBlockAt(bPos.offset(leftDir.x * 2, 1, leftDir.z * 2));
+          const bNearHead = this.adapter.getBlockAt(bPos.offset(leftDir.x, 1, leftDir.z));
+          const bFarFeet = this.adapter.getBlockAt(bPos.offset(leftDir.x * 2, 0, leftDir.z * 2));
+          const bNearFeet = this.adapter.getBlockAt(bPos.offset(leftDir.x, 0, leftDir.z));
+
+          if (bFarHead && bFarHead.name !== 'air' && !bFarHead.name.includes('water')) await this.safeDigBlock(bFarHead);
+          if (bNearHead && bNearHead.name !== 'air' && !bNearHead.name.includes('water')) await this.safeDigBlock(bNearHead);
+          if (bFarFeet && bFarFeet.name !== 'air' && !bFarFeet.name.includes('water')) await this.safeDigBlock(bFarFeet);
+          if (bNearFeet && bNearFeet.name !== 'air' && !bNearFeet.name.includes('water')) await this.safeDigBlock(bNearFeet);
+
+          await this.navigateXZ(bPos.x + leftDir.x * 2, bPos.z + leftDir.z * 2, 0.4, 2000);
+
+          const branchOres = this.findNearbyExposedOres(4);
+          if (branchOres.length > 0) {
+            totalOresFound += await this.mineAllNearbyOres(6, 4);
+          }
+        }
+        // Return to main tunnel hub
+        await this.navigateXZ(branchHubPos.x, branchHubPos.z, 0.4, 3000);
+
+        // 2. Right Branch (Reaching 2 blocks deep per step)
+        logger.info(`🌿 Digging right branch at step ${step} (${branchLength}m)...`, 'SafeDSL');
+        for (let b = 0; b < branchLength; b += 2) {
+          const bPos = this.adapter.getPosition();
+          const bFarHead = this.adapter.getBlockAt(bPos.offset(rightDir.x * 2, 1, rightDir.z * 2));
+          const bNearHead = this.adapter.getBlockAt(bPos.offset(rightDir.x, 1, rightDir.z));
+          const bFarFeet = this.adapter.getBlockAt(bPos.offset(rightDir.x * 2, 0, rightDir.z * 2));
+          const bNearFeet = this.adapter.getBlockAt(bPos.offset(rightDir.x, 0, rightDir.z));
+
+          if (bFarHead && bFarHead.name !== 'air' && !bFarHead.name.includes('water')) await this.safeDigBlock(bFarHead);
+          if (bNearHead && bNearHead.name !== 'air' && !bNearHead.name.includes('water')) await this.safeDigBlock(bNearHead);
+          if (bFarFeet && bFarFeet.name !== 'air' && !bFarFeet.name.includes('water')) await this.safeDigBlock(bFarFeet);
+          if (bNearFeet && bNearFeet.name !== 'air' && !bNearFeet.name.includes('water')) await this.safeDigBlock(bNearFeet);
+
+          await this.navigateXZ(bPos.x + rightDir.x * 2, bPos.z + rightDir.z * 2, 0.4, 2000);
+
+          const branchOres = this.findNearbyExposedOres(4);
+          if (branchOres.length > 0) {
+            totalOresFound += await this.mineAllNearbyOres(6, 4);
+          }
+        }
+        // Return to main tunnel hub
+        await this.navigateXZ(branchHubPos.x, branchHubPos.z, 0.4, 3000);
+      }
+    }
+
+    return { success: true, oresFound: totalOresFound };
+  }
+
+  /**
+   * 🚇 Strip / Tunnel Mining: Digs a straight 1x2 or 2x2 horizontal tunnel to discover ore veins.
+   */
+  async stripMine(options = {}) {
+    await this.packUpCraftingTable().catch(() => {});
+    const length = options.length || 16;
+    const forwardDir = new Vec3(1, 0, 0);
+    logger.info(`🚇 [Strip Mining] Excavating straight 1x2 tunnel forward (${length} blocks)...`, 'SafeDSL');
+
+    let totalOres = 0;
+    for (let step = 0; step < length; step += 2) {
+      const threats = this.adapter.findHostiles(8);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Threat Guard] Hostile '${threats[0].name}' in tunnel! Halting to fight...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+        break;
+      }
+
+      const curPos = this.adapter.getPosition();
+      // Reach 2 blocks deep before stepping
+      const farHead = this.adapter.getBlockAt(curPos.offset(forwardDir.x * 2, 1, forwardDir.z * 2));
+      const nearHead = this.adapter.getBlockAt(curPos.offset(forwardDir.x, 1, forwardDir.z));
+      const farFeet = this.adapter.getBlockAt(curPos.offset(forwardDir.x * 2, 0, forwardDir.z * 2));
+      const nearFeet = this.adapter.getBlockAt(curPos.offset(forwardDir.x, 0, forwardDir.z));
+
+      if (farHead && farHead.name !== 'air' && !farHead.name.includes('water')) await this.safeDigBlock(farHead);
+      if (nearHead && nearHead.name !== 'air' && !nearHead.name.includes('water')) await this.safeDigBlock(nearHead);
+      if (farFeet && farFeet.name !== 'air' && !farFeet.name.includes('water')) await this.safeDigBlock(farFeet);
+      if (nearFeet && nearFeet.name !== 'air' && !nearFeet.name.includes('water')) await this.safeDigBlock(nearFeet);
+
+      await this.navigateXZ(curPos.x + forwardDir.x * 2, curPos.z + forwardDir.z * 2, 0.4, 2000);
+
+      if (step % 6 === 0 && this.adapter.shouldPlaceTorch(6)) {
+        const floor = this.adapter.getBlockAt(this.adapter.getPosition().offset(0, -1, 0));
+        if (floor && floor.name !== 'air' && floor.name !== 'cave_air' && !floor.name.includes('water')) {
+          await this.safePlaceBlock(floor, new Vec3(0, 1, 0), 'torch');
+        }
+      }
+
+      const exposed = this.findNearbyExposedOres(6);
+      if (exposed.length > 0) {
+        totalOres += await this.mineAllNearbyOres(8, 4);
+      }
+    }
+
+    return { success: true, oresFound: totalOres };
+  }
+
+  /**
+   * 🕳️ 2x1 Safe Vertical Shaft Descent: Stands on 2-block border, digging 1 side down safely without lava hazard.
+   */
+  async safeShaftMine2x1(targetY = -54) {
+    await this.packUpCraftingTable().catch(() => {});
+    const startPos = this.adapter.getPosition();
+    const safeTargetY = Math.max(-54, targetY);
+
+    if (Math.round(startPos.y) <= safeTargetY) {
+      logger.info(`🛑 [Safety Floor] Already at deep safe mining level Y=${Math.round(startPos.y)} (above Bedrock). Switching to horizontal Fishbone Mining!`, 'SafeDSL');
+      return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+    }
+
+    const effectiveTargetY = Math.max(-54, Math.min(safeTargetY, Math.round(startPos.y) - 4));
+    logger.info(`🕳️ [2x1 Safe Shaft] Digging 2-block vertical shaft from Y=${Math.round(startPos.y)} to Y=${effectiveTargetY}...`, 'SafeDSL');
+
+    let currentBaseY = Math.round(startPos.y);
+
+    while (currentBaseY > effectiveTargetY && currentBaseY > -54) {
+      const pos = this.adapter.getPosition();
+      const blockAPos = new Vec3(Math.floor(pos.x), currentBaseY - 1, Math.floor(pos.z));
+      const blockBPos = new Vec3(Math.floor(pos.x) + 1, currentBaseY - 1, Math.floor(pos.z));
+
+      // Stand safely on Block B, dig Block A
+      const blockA = this.adapter.getBlockAt(blockAPos);
+      if (blockA && blockA.name !== 'air' && !blockA.name.includes('water')) {
+        await this.safeDigBlock(blockA);
+      }
+
+      // Step onto lowered Block A, dig Block B
+      await this.navigateXZ(blockAPos.x + 0.5, blockAPos.z + 0.5, 0.3, 1500);
+
+      const blockB = this.adapter.getBlockAt(blockBPos);
+      if (blockB && blockB.name !== 'air' && !blockB.name.includes('water')) {
+        await this.safeDigBlock(blockB);
+      }
+
+      currentBaseY--;
+
+      // Place torch on wall every 6 blocks
+      if (currentBaseY % 6 === 0 && this.adapter.shouldPlaceTorch(5)) {
+        const wall = this.adapter.getBlockAt(new Vec3(blockAPos.x - 1, currentBaseY, blockAPos.z));
+        if (wall && wall.name !== 'air' && wall.name !== 'cave_air') {
+          await this.safePlaceBlock(wall, new Vec3(1, 0, 0), 'torch').catch(() => {});
+        }
+      }
+    }
+
+    return { success: true, reachedY: currentBaseY };
+  }
+
+  /**
+   * 🦇 Cave Spelunking & Natural Cave Exploration:
+   * Traverses underground cave systems, lights dark tunnels with torches, and harvests all exposed wall/ceiling/floor ores.
+   */
+  async exploreCave(options = {}) {
+    await this.packUpCraftingTable().catch(() => {});
+    const maxSteps = options.maxSteps || 20;
+    const maxDurationSec = options.maxDurationSec || 45;
+    const startTime = Date.now();
+
+    logger.info(`🦇 [Cave Spelunking] Starting Cave System Exploration (maxSteps: ${maxSteps}, maxDuration: ${maxDurationSec}s)...`, 'SafeDSL');
+
+    let totalOresHarvested = 0;
+    const visitedPositions = new Set();
+
+    for (let step = 0; step < maxSteps; step++) {
+      if ((Date.now() - startTime) > (maxDurationSec * 1000)) {
+        logger.info('🦇 [Cave Spelunking] Max exploration duration reached. Ending spelunking pass.', 'SafeDSL');
+        break;
+      }
+
+      // 1. Threat & Combat Check
+      const threats = this.adapter.findHostiles(9);
+      if (threats.length > 0) {
+        logger.info(`⚔️ [Cave Combat] Hostile '${threats[0].name}' encountered in cave! Engaging threat...`, 'SafeDSL');
+        await this.adapter.autoEquipArmor().catch(() => {});
+        await this.adapter.equipHighestAttackWeapon().catch(() => {});
+        await this.adapter.attackEntity(threats[0]);
+      }
+
+      // 2. Harvest all exposed ores visible from current cave vantage point
+      const visibleOres = this.findNearbyExposedOres(14);
+      if (visibleOres.length > 0) {
+        logger.info(`💎 [Cave Spelunking] Found ${visibleOres.length} exposed ores in cave sector! Harvesting...`, 'SafeDSL');
+        const mined = await this.mineAllNearbyOres(14, 8);
+        totalOresHarvested += mined;
+      }
+
+      // 3. Place torch if dark on dry cave floor or wall
+      if (this.adapter.shouldPlaceTorch(6)) {
+        const floor = this.adapter.getBlockAt(this.adapter.getPosition().offset(0, -1, 0));
+        if (floor && floor.name !== 'air' && floor.name !== 'cave_air' && !floor.name.includes('water') && !floor.name.includes('lava')) {
+          await this.safePlaceBlock(floor, new Vec3(0, 1, 0), 'torch').catch(() => {});
+        }
+      }
+
+      // 4. Find next walkable cave floor node that hasn't been visited yet
+      const curPos = this.adapter.getPosition();
+      const currentKey = `${Math.floor(curPos.x / 4)},${Math.floor(curPos.z / 4)}`;
+      visitedPositions.add(currentKey);
+
+      // Search for open cave air spaces with walkable solid floor below within 12m
+      const candidateNodes = [];
+      for (let dx = -8; dx <= 8; dx += 2) {
+        for (let dz = -8; dz <= 8; dz += 2) {
+          for (let dy = -4; dy <= 4; dy++) {
+            const checkPos = new Vec3(Math.floor(curPos.x) + dx, Math.floor(curPos.y) + dy, Math.floor(curPos.z) + dz);
+            const head = this.adapter.getBlockAt(checkPos.offset(0, 1, 0));
+            const feet = this.adapter.getBlockAt(checkPos);
+            const floor = this.adapter.getBlockAt(checkPos.offset(0, -1, 0));
+
+            const isOpenAir = head && (head.name === 'air' || head.name === 'cave_air') &&
+                             feet && (feet.name === 'air' || feet.name === 'cave_air');
+            const isWalkableFloor = floor && floor.name !== 'air' && floor.name !== 'cave_air' && !floor.name.includes('water') && !floor.name.includes('lava') && floor.name !== 'bedrock';
+
+            if (isOpenAir && isWalkableFloor) {
+              const nodeKey = `${Math.floor(checkPos.x / 4)},${Math.floor(checkPos.z / 4)}`;
+              const dist = this.adapter.distanceTo(checkPos);
+              if (dist >= 3.0 && dist <= 12.0 && !visitedPositions.has(nodeKey)) {
+                candidateNodes.push({ pos: checkPos, dist, key: nodeKey });
+              }
+            }
+          }
+        }
+      }
+
+      if (candidateNodes.length === 0) {
+        logger.info('🦇 [Cave Spelunking] No further unexplored cave passages in current sector.', 'SafeDSL');
+        break;
+      }
+
+      // Sort candidate nodes: Prefer nodes that lead deeper or towards unexplored areas
+      candidateNodes.sort((a, b) => a.pos.y - b.pos.y || a.dist - b.dist);
+      const nextTarget = candidateNodes[0];
+
+      logger.info(`🦇 [Cave Spelunking] Walking along cave tunnel to (${nextTarget.pos.x}, ${nextTarget.pos.y}, ${nextTarget.pos.z})...`, 'SafeDSL');
+      visitedPositions.add(nextTarget.key);
+      await this.adapter.gotoXZ(nextTarget.pos.x, nextTarget.pos.z, 1.5, 4000).catch(() => {});
+    }
+
+    logger.info(`🦇 [Cave Spelunking] Completed cave exploration run. Total ores harvested: ${totalOresHarvested}`, 'SafeDSL');
+    return { success: true, oresMined: totalOresHarvested };
+  }
+
+  /**
+   * 🧠 Smart Strategic Mining Selector:
+   * Dynamically chooses between Cave Spelunking, Staircase Descent, 2x1 Vertical Shaft, Fishbone Mining, or Strip Mining!
+   */
+  async mineStrategically(oreType = 'iron', targetDepth = null) {
+    const currentY = this.adapter.getPosition().y;
+    const optimalDepth = targetDepth !== null ? targetDepth : (oreType === 'diamond' ? -54 : 16);
+
+    // 0. If open cave with exposed ores is visible nearby underground, explore the natural cave first!
+    const caveOres = this.findNearbyExposedOres(16);
+    if (currentY < 60 && caveOres.length >= 2) {
+      logger.info(`🦇 [Strategy] Detected open cave system with ${caveOres.length} exposed ores at Y=${Math.round(currentY)}! Prioritizing Cave Spelunking & Exploration...`, 'SafeDSL');
+      return await this.exploreCave({ maxSteps: 25, maxDurationSec: 60 });
+    }
+
+    // 1. If we are high above the target depth, descend!
+    if (currentY > optimalDepth + 4) {
+      if (Math.random() < 0.6) {
+        return await this.staircaseMineDown(optimalDepth);
+      } else {
+        return await this.safeShaftMine2x1(optimalDepth);
+      }
+    }
+
+    // 2. Once at optimal depth, choose between Fishbone (Branch) and Straight Strip Mining!
+    if (Math.random() < 0.65) {
+      logger.info(`🐟 [Strategy] At optimal ore depth Y=${Math.round(currentY)}. Executing High-Efficiency Fishbone (ก้างปลา) Mining!`, 'SafeDSL');
+      return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+    } else {
+      logger.info(`🚇 [Strategy] At optimal ore depth Y=${Math.round(currentY)}. Executing Deep Strip (ทางยาว) Mining!`, 'SafeDSL');
+      return await this.stripMine({ length: 18 });
+    }
   }
 
   /**

@@ -6,10 +6,10 @@ server:
   host: "127.0.0.1"
   port: 25565
   version: false # false = auto-detect server version dynamically (1.16 - 1.21+)
-  auth: "offline" # offline (cracked/local) or microsoft
+  auth: "microsoft" # offline (cracked/local) or microsoft
 
 bot:
-  username: "Muumiu"
+  username: "muumiu.hub@gmail.com"
   view_distance: "far"
   check_timeout_interval: 30000
   physics:

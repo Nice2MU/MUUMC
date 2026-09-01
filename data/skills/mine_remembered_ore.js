@@ -15,6 +15,8 @@ const block = dsl.adapter.getBlockAt(targetPos);
 if (block && block.name !== 'air' && block.name !== 'cave_air') {
   await dsl.safeDigBlock(block);
   logger.info(`💎 [Victory] Successfully mined remembered diamond block '${block.name}' at (${x}, ${y}, ${z})!`, 'SafeDSL');
-  return { success: true, mined: block.name };
+}
+if (dsl.worldMemory) {
+  dsl.worldMemory.removeDiscoveredOre(null, targetPos);
 }
 return { success: true };

@@ -18,16 +18,42 @@ class ConfigLoader {
       auto_reconnect: { enabled: true, max_retries: 10, retry_delay_ms: 5000 },
     });
     this.aiprovider = this._loadYaml('aiprovider.yaml', {
+      active_provider: 'openrouter',
       ollama: {
         base_url: 'http://127.0.0.1:11434',
         model: 'qwen2.5-coder:3b',
         num_ctx: 16384,
         temperature: 0.2,
-        timeout_ms: 25000,
+        timeout_ms: 60000,
       },
-      sandbox: { step_timeout_ms: 15000, auto_unwrap: true, max_self_healing_attempts: 1 },
+      openrouter: {
+        api_key: process.env.OPENROUTER_API_KEY || '',
+        base_url: 'https://openrouter.ai/api/v1',
+        model: 'minimax/minimax-m3:free',
+        temperature: 0.2,
+        max_tokens: 500,
+        timeout_ms: 60000,
+      },
+      sandbox: { step_timeout_ms: 60000, auto_unwrap: true, max_self_healing_attempts: 1 },
       cache: { enabled: true, similarity_threshold: 0.85 },
     });
+
+    // Auto-resolve parent MuumiuLLM openrouter api key if available and not set locally
+    if (!this.aiprovider.openrouter.api_key) {
+      if (process.env.OPENROUTER_API_KEY) {
+        this.aiprovider.openrouter.api_key = process.env.OPENROUTER_API_KEY;
+      } else {
+        const parentConfigPath = path.resolve(__dirname, '../../../../config/aiprovider/aiprovider.yaml');
+        if (fs.existsSync(parentConfigPath)) {
+          try {
+            const parentYaml = yaml.parse(fs.readFileSync(parentConfigPath, 'utf8'));
+            if (parentYaml && parentYaml.openrouter && parentYaml.openrouter.api_key) {
+              this.aiprovider.openrouter.api_key = parentYaml.openrouter.api_key;
+            }
+          } catch (_) {}
+        }
+      }
+    }
   }
 
   _loadYaml(filename, defaults) {

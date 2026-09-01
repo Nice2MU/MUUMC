@@ -1,6 +1,8 @@
 # ==========================================================
-# Tactical AI Coder (Agent 2) Configuration for muu-mc
+# AI Provider Configuration for muu-mc (Agent 2 & In-Game Chat)
 # ==========================================================
+
+active_provider: "openrouter" # ollama or openrouter
 
 ollama:
   base_url: "http://127.0.0.1:11434"
@@ -9,6 +11,14 @@ ollama:
   temperature: 0.2
   timeout_ms: 60000
   keep_alive: "1h"
+
+openrouter:
+  api_key: "" # Set OPENROUTER_API_KEY env var or auto-resolved from MuumiuLLM
+  base_url: "https://openrouter.ai/api/v1"
+  model: "minimax/minimax-m3:free"
+  temperature: 0.2
+  max_tokens: 500
+  timeout_ms: 60000
 
 sandbox:
   step_timeout_ms: 60000

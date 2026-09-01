@@ -61,20 +61,21 @@ CRITICAL RULES:
 
 class AICoderAgent {
   constructor(customConfig = null) {
-    this.cfg = customConfig || config.aiprovider.ollama;
-    this.baseUrl = this.cfg.base_url || 'http://127.0.0.1:11434';
-    this.model = this.cfg.model || 'qwen2.5-coder:3b';
+    this.aiproviderCfg = config.aiprovider || {};
+    this.activeProvider = this.aiproviderCfg.active_provider || 'ollama';
+    this.cfg = customConfig || (this.activeProvider === 'openrouter' ? this.aiproviderCfg.openrouter : this.aiproviderCfg.ollama);
+    this.baseUrl = this.cfg.base_url || (this.activeProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://127.0.0.1:11434');
+    this.model = this.cfg.model || (this.activeProvider === 'openrouter' ? 'minimax/minimax-m3:free' : 'qwen2.5-coder:3b');
+    this.apiKey = this.cfg.api_key || '';
     this.numCtx = this.cfg.num_ctx || 2048;
     this.temperature = this.cfg.temperature || 0.1;
-    this.timeoutMs = this.cfg.timeout_ms || 25000;
+    this.timeoutMs = this.cfg.timeout_ms || 60000;
   }
 
   async generateCode(taskDescription, worldState, args = {}) {
-    logger.info(`🤖 Agent 2 analyzing task: "${taskDescription}" with model '${this.model}'...`, 'AICoder');
+    logger.info(`🤖 Agent 2 analyzing task: "${taskDescription}" with provider '${this.activeProvider}' model '${this.model}'...`, 'AICoder');
 
-    const prompt = `${SYSTEM_PROMPT}
-
-Current World State:
+    const userPrompt = `Current World State:
 - Position: (${worldState.position.x}, ${worldState.position.y}, ${worldState.position.z})
 - Health: ${worldState.health}/20, Food: ${worldState.food}/20
 - Inventory: ${JSON.stringify(worldState.inventory || [])}
@@ -84,32 +85,60 @@ Current World State:
 Task: ${taskDescription}
 Arguments: ${JSON.stringify(args)}
 
-Write the JavaScript code:`;
+Write ONLY the executable Safe DSL JavaScript code:`;
 
     const startTime = Date.now();
     try {
-      const response = await axios.post(
-        `${this.baseUrl}/api/generate`,
-        {
-          model: this.model,
-          prompt: prompt,
-          stream: false,
-          options: {
-            num_ctx: this.numCtx,
-            num_predict: 128,
+      let rawCode = '';
+
+      if (this.activeProvider === 'openrouter') {
+        const response = await axios.post(
+          `${this.baseUrl.replace(/\/+$/, '')}/chat/completions`,
+          {
+            model: this.model,
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
             temperature: this.temperature,
-            stop: ['```\n\n', '</code>'],
+            max_tokens: 300,
           },
-        },
-        { timeout: this.timeoutMs }
-      );
+          {
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'HTTP-Referer': 'https://github.com/Nice2MU/MuumiuLLM',
+              'X-Title': 'MuumiuLLM Agent 2',
+              'Content-Type': 'application/json',
+            },
+            timeout: this.timeoutMs,
+          }
+        );
+        rawCode = response.data?.choices?.[0]?.message?.content || '';
+      } else {
+        const fullPrompt = `${SYSTEM_PROMPT}\n\n${userPrompt}`;
+        const response = await axios.post(
+          `${this.baseUrl}/api/generate`,
+          {
+            model: this.model,
+            prompt: fullPrompt,
+            stream: false,
+            options: {
+              num_ctx: this.numCtx,
+              num_predict: 128,
+              temperature: this.temperature,
+              stop: ['```\n\n', '</code>'],
+            },
+          },
+          { timeout: this.timeoutMs }
+        );
+        rawCode = response.data?.response || '';
+      }
 
       const latency = ((Date.now() - startTime) / 1000).toFixed(2);
-      const rawCode = response.data?.response || '';
-      logger.info(`⚡ Agent 2 code generated in ${latency}s (${rawCode.length} chars)`, 'AICoder');
+      logger.info(`⚡ Agent 2 code generated via ${this.activeProvider} in ${latency}s (${rawCode.length} chars)`, 'AICoder');
       return rawCode;
     } catch (e) {
-      logger.error(`Ollama code generation failed: ${e.message}`, 'AICoder');
+      logger.error(`AI Coder generation failed (${this.activeProvider}): ${e.message}`, 'AICoder');
       throw new Error(`AI Coder generation error: ${e.message}`);
     }
   }

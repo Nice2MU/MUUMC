@@ -1,31 +1,4 @@
 {
-  "149_-24_10": {
-    "name": "deepslate_diamond_ore",
-    "coords": {
-      "x": 149,
-      "y": -24,
-      "z": 10
-    },
-    "discovered_at": "2026-08-31T19:47:20.840Z"
-  },
-  "149_-24_9": {
-    "name": "deepslate_diamond_ore",
-    "coords": {
-      "x": 149,
-      "y": -24,
-      "z": 9
-    },
-    "discovered_at": "2026-08-31T19:47:20.844Z"
-  },
-  "149_-23_10": {
-    "name": "deepslate_diamond_ore",
-    "coords": {
-      "x": 149,
-      "y": -23,
-      "z": 10
-    },
-    "discovered_at": "2026-08-31T19:47:20.844Z"
-  },
   "148_-24_10": {
     "name": "deepslate_diamond_ore",
     "coords": {
@@ -250,5 +223,122 @@
       "z": 14
     },
     "discovered_at": "2026-08-31T19:53:08.179Z"
+  },
+  "130_2_-6": {
+    "name": "deepslate_gold_ore",
+    "coords": {
+      "x": 130,
+      "y": 2,
+      "z": -6
+    },
+    "discovered_at": "2026-09-01T18:22:16.313Z"
+  },
+  "147_-9_-13": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 147,
+      "y": -9,
+      "z": -13
+    },
+    "discovered_at": "2026-09-01T18:22:56.304Z"
+  },
+  "147_-10_-13": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 147,
+      "y": -10,
+      "z": -13
+    },
+    "discovered_at": "2026-09-01T18:22:56.304Z"
+  },
+  "141_5_-8": {
+    "name": "gold_ore",
+    "coords": {
+      "x": 141,
+      "y": 5,
+      "z": -8
+    },
+    "discovered_at": "2026-09-01T18:23:16.984Z"
+  },
+  "141_6_-8": {
+    "name": "gold_ore",
+    "coords": {
+      "x": 141,
+      "y": 6,
+      "z": -8
+    },
+    "discovered_at": "2026-09-01T18:23:16.985Z"
+  },
+  "141_5_-9": {
+    "name": "deepslate_gold_ore",
+    "coords": {
+      "x": 141,
+      "y": 5,
+      "z": -9
+    },
+    "discovered_at": "2026-09-01T18:23:16.985Z"
+  },
+  "140_5_-9": {
+    "name": "deepslate_gold_ore",
+    "coords": {
+      "x": 140,
+      "y": 5,
+      "z": -9
+    },
+    "discovered_at": "2026-09-01T18:23:16.985Z"
+  },
+  "141_6_-9": {
+    "name": "deepslate_gold_ore",
+    "coords": {
+      "x": 141,
+      "y": 6,
+      "z": -9
+    },
+    "discovered_at": "2026-09-01T18:23:16.985Z"
+  },
+  "236_-52_-25": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 236,
+      "y": -52,
+      "z": -25
+    },
+    "discovered_at": "2026-09-01T18:49:04.415Z"
+  },
+  "237_-51_-25": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 237,
+      "y": -51,
+      "z": -25
+    },
+    "discovered_at": "2026-09-01T18:49:04.417Z"
+  },
+  "236_-52_-26": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 236,
+      "y": -52,
+      "z": -26
+    },
+    "discovered_at": "2026-09-01T18:49:04.417Z"
+  },
+  "237_-51_-26": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 237,
+      "y": -51,
+      "z": -26
+    },
+    "discovered_at": "2026-09-01T18:49:04.417Z"
+  },
+  "251_-62_-15": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": 251,
+      "y": -62,
+      "z": -15
+    },
+    "discovered_at": "2026-09-01T18:49:04.417Z"
   }
 }

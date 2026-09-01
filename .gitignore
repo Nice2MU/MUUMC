@@ -9,6 +9,7 @@ logs/*.log
 *.log
 
 # Temporary and Cache files
+data/auth_cache/
 data/worlds/**/.tmp*
 *.tmp
 

@@ -68,7 +68,7 @@ class PluginWrappers {
     if (!bot._pathfinderLoaded || !bot._MovementsClass || !mcData) return null;
     try {
       const defaultMove = new bot._MovementsClass(bot, mcData);
-      defaultMove.canDig = false; // Disable digging while walking to prevent pausing/jittering on harmless grass
+      defaultMove.canDig = true;
       defaultMove.allowParkour = true; // Enables jumping 1-block steps and gaps smoothly
       defaultMove.allowSprinting = true; // Enables natural sprint-walking
       defaultMove.allow1by1towers = false;
@@ -76,12 +76,13 @@ class PluginWrappers {
       defaultMove.maxDropDown = 4;
       defaultMove.dontCreateFlow = true;
 
-      // Mark harmless foliage as passable empty blocks
+      // Mark harmless foliage & snow layers as passable empty blocks
       const foliage = [
         'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush',
         'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'red_tulip',
         'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower',
-        'lily_of_the_valley', 'sunflower', 'lilac', 'rose_bush', 'peony'
+        'lily_of_the_valley', 'sunflower', 'lilac', 'rose_bush', 'peony',
+        'snow'
       ];
       for (const name of foliage) {
         const blk = mcData.blocksByName[name];

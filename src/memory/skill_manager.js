@@ -96,27 +96,36 @@ class SkillManager {
       }
     }
 
-    const isExplicitMining = desc.startsWith('ขุด') || desc.startsWith('mine') || desc.startsWith('dig') || desc.startsWith('ตัด') || desc.startsWith('chop') || desc.includes('ขุดแร่') || desc.includes('ขุดเจาะ');
-    const isExplicitCrafting = (desc.startsWith('คราฟต์') || desc.startsWith('craft') || desc.startsWith('ทำ') || desc.startsWith('สร้าง') || desc.includes('คราฟต์')) && !isExplicitMining;
+    const startsWithMiningVerb = desc.startsWith('ขุด') || desc.startsWith('mine') || desc.startsWith('dig') || 
+                                 desc.startsWith('ตัดไม้') || desc.startsWith('chop') || desc.startsWith('หาแร่') || 
+                                 desc.startsWith('ขุดแร่') || desc.startsWith('ขุดบันได') || desc.startsWith('ค้นหาต้นไม้') || 
+                                 desc.startsWith('หาต้นไม้') || desc.startsWith('หาบล็อกหิน') || desc.startsWith('หาหิน');
+    const isExplicitCrafting = (desc.startsWith('คราฟต์') || desc.startsWith('คราฟ') || desc.startsWith('craft') || desc.startsWith('ทำ') || desc.startsWith('สร้าง') || desc.startsWith('อัปเกรด') || desc.startsWith('นำไม้ท่อนในตัวมาคราฟต์')) && !startsWithMiningVerb;
+    const isExplicitMining = startsWithMiningVerb || (!isExplicitCrafting && (desc.includes('ขุด') || desc.includes('mine') || desc.includes('ตัดไม้') || desc.includes('ขุดหิน') || desc.includes('ขุดแร่')));
 
     // 1. Crafting Items (Prioritized when crafting is the main verb)
     if (isExplicitCrafting) {
       if (desc.includes('iron_pickaxe') || desc.includes('ที่ขุดเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_pickaxe', count: 1 } };
       if (desc.includes('diamond_pickaxe') || desc.includes('ที่ขุดเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_pickaxe', count: 1 } };
       if (desc.includes('stone_pickaxe') || desc.includes('ที่ขุดหิน')) return { skill_name: 'craft_item', args: { item_name: 'stone_pickaxe', count: 1 } };
-      if (desc.includes('wooden_pickaxe') || desc.includes('ที่ขุดไม้')) return { skill_name: 'craft_item', args: { item_name: 'wooden_pickaxe', count: 1 } };
+      if (desc.includes('wooden_pickaxe') || desc.includes('ที่ขุดไม้') || (desc.includes('ที่ขุด') && !desc.includes('เหล็ก') && !desc.includes('หิน') && !desc.includes('เพชร'))) return { skill_name: 'craft_item', args: { item_name: 'wooden_pickaxe', count: 1 } };
       if (desc.includes('iron_sword') || desc.includes('ดาบเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_sword', count: 1 } };
       if (desc.includes('diamond_sword') || desc.includes('ดาบเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_sword', count: 1 } };
       if (desc.includes('stone_sword') || desc.includes('ดาบหิน')) return { skill_name: 'craft_item', args: { item_name: 'stone_sword', count: 1 } };
-      if (desc.includes('iron_axe') || desc.includes('ขวานเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_axe', count: 1 } };
-      if (desc.includes('stone_axe') || desc.includes('ขวานหิน')) return { skill_name: 'craft_item', args: { item_name: 'stone_axe', count: 1 } };
-      if (desc.includes('wooden_axe') || desc.includes('ขวานไม้')) return { skill_name: 'craft_item', args: { item_name: 'wooden_axe', count: 1 } };
+      if (desc.includes('diamond_axe') || desc.includes('ขวานเพชร') || desc.includes('ควานเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_axe', count: 1 } };
+      if (desc.includes('iron_axe') || desc.includes('ขวานเหล็ก') || desc.includes('ควานเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_axe', count: 1 } };
+      if (desc.includes('stone_axe') || desc.includes('ขวานหิน') || desc.includes('ควานหิน')) return { skill_name: 'craft_item', args: { item_name: 'stone_axe', count: 1 } };
+      if (desc.includes('wooden_axe') || desc.includes('ขวานไม้') || desc.includes('ควานไม้') || ((desc.includes('ขวาน') || desc.includes('axe')) && !desc.includes('เพชร') && !desc.includes('เหล็ก') && !desc.includes('หิน'))) return { skill_name: 'craft_item', args: { item_name: 'wooden_axe', count: 1 } };
+      if (desc.includes('diamond_shovel') || desc.includes('พลั่วเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_shovel', count: 1 } };
       if (desc.includes('shield') || desc.includes('โล่')) return { skill_name: 'craft_item', args: { item_name: 'shield', count: 1 } };
       if (desc.includes('iron_chestplate') || desc.includes('เสื้อเกราะเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_chestplate', count: 1 } };
       if (desc.includes('iron_leggings') || desc.includes('กางเกงเกราะเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_leggings', count: 1 } };
       if (desc.includes('iron_boots') || desc.includes('รองเท้าเกราะเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_boots', count: 1 } };
       if (desc.includes('iron_helmet') || desc.includes('หมวกเกราะเหล็ก')) return { skill_name: 'craft_item', args: { item_name: 'iron_helmet', count: 1 } };
       if (desc.includes('diamond_chestplate') || desc.includes('เสื้อเกราะเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_chestplate', count: 1 } };
+      if (desc.includes('diamond_leggings') || desc.includes('กางเกงเกราะเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_leggings', count: 1 } };
+      if (desc.includes('diamond_boots') || desc.includes('รองเท้าเกราะเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_boots', count: 1 } };
+      if (desc.includes('diamond_helmet') || desc.includes('หมวกเกราะเพชร')) return { skill_name: 'craft_item', args: { item_name: 'diamond_helmet', count: 1 } };
       if (desc.includes('furnace') || desc.includes('เตาเผา')) return { skill_name: 'craft_item', args: { item_name: 'furnace', count: 1 } };
       if (desc.includes('table') || desc.includes('โต๊ะคราฟต์') || desc.includes('crafting_table')) return { skill_name: 'craft_item', args: { item_name: 'crafting_table', count: 1 } };
       if (desc.includes('torch') || desc.includes('คบเพลิง')) return { skill_name: 'craft_item', args: { item_name: 'torch', count: 4 } };
@@ -126,6 +135,7 @@ class SkillManager {
 
     // 2. Mining / Harvesting Tasks
     if (isExplicitMining) {
+      if (desc.includes('โต๊ะคราฟต์') || desc.includes('crafting_table')) return { skill_name: 'recover_table', args: {} };
       if (desc.includes('coal') || desc.includes('ถ่าน')) return { skill_name: 'mine_ore', args: { ore_type: 'coal', count: 4 } };
       if (desc.includes('iron') || desc.includes('เหล็ก')) return { skill_name: 'mine_ore', args: { ore_type: 'iron', count: 4 } };
       if (desc.includes('gold') || desc.includes('ทอง')) return { skill_name: 'mine_ore', args: { ore_type: 'gold', count: 2 } };
@@ -211,13 +221,51 @@ class SkillManager {
       };
     }
 
-    // 10. Staircase Mining Down
-    if (desc.includes('ขุดบันได') || desc.includes('staircase') || desc.includes('ลงใต้ดิน')) {
+    // 10. Branch / Fishbone Mining (ก้างปลา)
+    // 10. Cave Spelunking & Natural Cave Exploration (สำรวจถ้ำ / เดินเหมือง)
+    if (desc.includes('สำรวจถ้ำ') || desc.includes('เดินเหมือง') || desc.includes('เดินถ้ำ') || desc.includes('ถ้ำ') || desc.includes('cave') || desc.includes('spelunk')) {
+      return {
+        skill_name: 'explore_cave',
+        args: { max_steps: 25, duration_sec: 60 },
+      };
+    }
+
+    // 11. Branch / Fishbone Mining (ก้างปลา)
+    if (desc.includes('ก้างปลา') || desc.includes('branch mine') || desc.includes('fishbone')) {
+      return {
+        skill_name: 'branch_mine',
+        args: { length: 15, spacing: 3, branch_length: 6 },
+      };
+    }
+
+    // 11. Strip / Tunnel Mining (ขุดทางยาว)
+    if (desc.includes('ทางยาว') || desc.includes('strip mine') || desc.includes('tunnel') || desc.includes('อุโมงค์')) {
+      return {
+        skill_name: 'strip_mine',
+        args: { length: 18 },
+      };
+    }
+
+    // 12. 2x1 Safe Shaft Mining (ขุดดิ่ง 2 บล็อก)
+    if (desc.includes('ขุดดิ่ง') || desc.includes('shaft') || desc.includes('ดิ่งลง')) {
       const match = desc.match(/Y\s*=\s*(-?\d+)/i);
       const targetY = match ? parseInt(match[1]) : 16;
       return {
-        skill_name: 'staircase_mine',
+        skill_name: 'shaft_mine',
         args: { target_y: targetY },
+      };
+    }
+
+    // 13. Staircase / Strategic Mining Down
+    if (desc.includes('ขุดบันได') || desc.includes('staircase') || desc.includes('ลงใต้ดิน') || desc.includes('ลงเหมือง') || desc.includes('ขุดเหมือง')) {
+      const match = desc.match(/Y\s*=\s*(-?\d+)/i);
+      const targetY = match ? parseInt(match[1]) : 16;
+      let oreType = 'iron';
+      if (desc.includes('เพชร') || desc.includes('diamond')) oreType = 'diamond';
+      else if (desc.includes('ถ่าน') || desc.includes('coal')) oreType = 'coal';
+      return {
+        skill_name: 'staircase_mine',
+        args: { target_y: targetY, ore_type: oreType },
       };
     }
 

@@ -344,12 +344,21 @@ class AutonomousEngine {
       // ⚔️ MODE 2: ⚔️ Self-Defense & Combat
       // =========================================================================
       if (this._cfg.self_defense !== false) {
-        const hostiles = adapter.findHostiles(10);
+        if (!this._unreachableHostiles) this._unreachableHostiles = new Map();
+        const now = Date.now();
+        const hostiles = adapter.findHostiles(10).filter(e => {
+          return !this._unreachableHostiles.has(e.id) || this._unreachableHostiles.get(e.id) <= now;
+        });
+
         if (hostiles.length > 0) {
           const targetEnemy = hostiles[0];
           this._currentGoal = 'defending_self';
           this.emitBanter('hostile_spotted');
           await this.dispatchGoalToAI(`มีมอนสเตอร์ ${targetEnemy.name} อยู่ใกล้ ให้ถืออาวุธที่ดีที่สุดและเข้าโจมตีป้องกันตัว`);
+          // If after combat dispatch the enemy is still alive and far, cool down to prevent infinite loop
+          if (adapter.distanceTo(targetEnemy.position) > 4.5) {
+            this._unreachableHostiles.set(targetEnemy.id, Date.now() + 20000);
+          }
           if (signal.aborted) return;
           return;
         }
@@ -372,9 +381,25 @@ class AutonomousEngine {
       }
 
       if (this._cfg.auto_eat && adapter.getFood() < 16) {
-        this._currentGoal = 'eating';
-        await this.dispatchGoalToAI('กินอาหารที่มีในตัวเพื่อฟื้นฟูค่าความหิว ถ้าไม่มีอาหารให้ล่าสัตว์ใกล้ๆ');
-        if (signal.aborted) return;
+        const hasFood = adapter.getInventory().some(i => [
+          'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
+          'bread', 'apple', 'cooked_cod', 'cooked_salmon', 'baked_potato',
+          'beef', 'porkchop', 'mutton', 'chicken', 'sweet_berries'
+        ].includes(i.name));
+
+        if (hasFood) {
+          this._currentGoal = 'eating';
+          await this.dispatchGoalToAI('กินอาหารที่มีในตัวเพื่อฟื้นฟูค่าความหิว');
+          if (signal.aborted) return;
+        } else if (!this._lastHuntAttempt || Date.now() - this._lastHuntAttempt > 25000) {
+          const passives = adapter.findEntities({ type: 'passive', maxDistance: 16 });
+          if (passives.length > 0) {
+            this._currentGoal = 'hunting_for_food';
+            this._lastHuntAttempt = Date.now();
+            await this.dispatchGoalToAI(`ล่าสัตว์ ${passives[0].name} ใกล้ๆ เพื่อหาเนื้อมาทำอาหารฟื้นฟูความหิว`);
+            if (signal.aborted) return;
+          }
+        }
       }
 
       if (this._cfg.auto_sleep && rawBot?.time?.isNight && !rawBot?.isSleeping) {
@@ -386,15 +411,15 @@ class AutonomousEngine {
       }
 
       // =========================================================================
-      // 📦 MODE 4: 📦 Ground Loot Collection (Only when inventory has space and not on priority mission)
+      // 📦 MODE 4: 📦 Ground Loot Collection (Only for valuable ores/food/tools nearby)
       // =========================================================================
-      if (this._cfg.gather_drops && this._currentGoal !== 'returning_to_remembered_diamonds') {
+      if (this._cfg.gather_drops && this._currentGoal !== 'returning_to_remembered_diamonds' && !this._currentGoal?.includes('mining')) {
         if (rawBot && rawBot.inventory.emptySlotCount() === 0) {
           await adapter.cleanInventory();
         }
 
         if (rawBot && rawBot.inventory.emptySlotCount() >= 4) {
-          const droppedItems = adapter.findDroppedItems(8);
+          const droppedItems = adapter.findDroppedItems(6);
           const accessibleDrop = droppedItems.find(d => !this._unreachableDrops.has(d.id) && !adapter.isTossedTrash(d));
 
           if (accessibleDrop) {
@@ -404,7 +429,7 @@ class AutonomousEngine {
               logger.info(`📦 [Loot] Item ${accessibleDrop.id} uncollectible after 2 attempts. Bypassing...`, 'AutonomousEngine');
             } else {
               this._currentGoal = 'gathering_loot';
-              await this.dispatchGoalToAI('เดินไปเก็บไอเทมที่ตกอยู่บนพื้นใกล้ๆ ให้หมด', 'collect_drops');
+              await this.dispatchGoalToAI('เดินไปเก็บไอเทมมีค่าที่ตกอยู่บนพื้นใกล้ๆ', 'collect_drops');
               if (signal.aborted) return;
               return;
             }
@@ -480,9 +505,80 @@ class AutonomousEngine {
       }
 
       // =========================================================================
-      // 💎 STAGE 0: TOP PRIORITY — IRON PICKAXE & REMEMBERED DIAMOND HARVEST
+      // 💎 STAGE 0: TOP PRIORITY — HIGH-TIER GEAR & ARMOR MASTERY
       // =========================================================================
-      // A. If we have 3+ Iron Ingots and no Iron Pickaxe, craft it immediately!
+      // 0. Auto-equip armor and shield if sitting in inventory
+      await adapter.autoEquipArmor().catch(() => {});
+
+      // A. If we have valuable Diamonds or Iron but lack Wood/Sticks for crafting:
+      if ((diamondCount >= 2 || ironIngotCount >= 2) && (!hasWoodPrerequisites || !hasWoodForTable)) {
+        this._currentGoal = 'gathering_wood_for_high_tier_gear';
+        logger.info(`🪵 [Gear Prerequisite] Have ${diamondCount} diamonds / ${ironIngotCount} iron ingots! Gathering wood for sticks & table...`, 'AutonomousEngine');
+        await this.dispatchGoalToAI('ตัดต้นไม้ 2 บล็อกเพื่อนำไม้มาคราฟต์ไม้แท่งและโต๊ะคราฟต์สำหรับทำอุปกรณ์');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // B. 💎 DIAMOND GEAR MASTERY (Top Equipment Priority):
+      if (hasWoodPrerequisites && diamondCount >= 3 && !hasDiamondPick) {
+        this._currentGoal = 'crafting_diamond_pickaxe';
+        this.emitBanter('diamond_gear_crafted');
+        await this.dispatchGoalToAI('คราฟต์ที่ขุดเพชร Diamond Pickaxe จากเพชร 3 เม็ดและไม้แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodPrerequisites && diamondCount >= 2 && !adapter.hasItem('diamond_sword')) {
+        this._currentGoal = 'crafting_diamond_sword';
+        await this.dispatchGoalToAI('คราฟต์ดาบเพชร Diamond Sword จากเพชร 2 เม็ด');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && diamondCount >= 8 && !adapter.hasItem('diamond_chestplate')) {
+        this._currentGoal = 'crafting_diamond_chestplate';
+        this.emitBanter('diamond_gear_crafted');
+        await this.dispatchGoalToAI('คราฟต์เสื้อเกราะเพชร Diamond Chestplate จากเพชร 8 เม็ด');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && diamondCount >= 7 && !adapter.hasItem('diamond_leggings')) {
+        this._currentGoal = 'crafting_diamond_leggings';
+        await this.dispatchGoalToAI('คราฟต์กางเกงเกราะเพชร Diamond Leggings จากเพชร 7 เม็ด');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && diamondCount >= 4 && !adapter.hasItem('diamond_boots')) {
+        this._currentGoal = 'crafting_diamond_boots';
+        await this.dispatchGoalToAI('คราฟต์รองเท้าเกราะเพชร Diamond Boots จากเพชร 4 เม็ด');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && diamondCount >= 5 && !adapter.hasItem('diamond_helmet')) {
+        this._currentGoal = 'crafting_diamond_helmet';
+        await this.dispatchGoalToAI('คราฟต์หมวกเกราะเพชร Diamond Helmet จากเพชร 5 เม็ด');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodPrerequisites && diamondCount >= 3 && !adapter.hasItem('diamond_axe')) {
+        this._currentGoal = 'crafting_diamond_axe';
+        await this.dispatchGoalToAI('คราฟต์ขวานเพชร Diamond Axe จากเพชร 3 เม็ดและไม้แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodPrerequisites && diamondCount >= 1 && !adapter.hasItem('diamond_shovel')) {
+        this._currentGoal = 'crafting_diamond_shovel';
+        await this.dispatchGoalToAI('คราฟต์พลั่วเพชร Diamond Shovel จากเพชร 1 เม็ดและไม้แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // C. ⛓️ IRON GEAR MASTERY:
       if (hasWoodPrerequisites && ironIngotCount >= 3 && !hasIronPick && !hasDiamondPick) {
         this._currentGoal = 'crafting_iron_pickaxe';
         await this.dispatchGoalToAI('คราฟต์ที่ขุดเหล็ก Iron Pickaxe จากแท่งเหล็ก 3 แท่งและไม้แท่ง');
@@ -490,7 +586,50 @@ class AutonomousEngine {
         return;
       }
 
-      // B. If we have an Iron Pickaxe, IMMEDIATELY scan for local Diamonds within 24m and mine them before all other tasks!
+      if (hasWoodPrerequisites && ironIngotCount >= 2 && !adapter.hasItem('iron_sword') && !adapter.hasItem('diamond_sword')) {
+        this._currentGoal = 'crafting_iron_sword';
+        await this.dispatchGoalToAI('คราฟต์ดาบเหล็ก Iron Sword จากแท่งเหล็ก 2 แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (ironIngotCount >= 1 && (totalPlanks >= 6 || totalLogs >= 2) && !adapter.hasItem('shield')) {
+        this._currentGoal = 'crafting_shield';
+        await this.dispatchGoalToAI('คราฟต์โล่ป้องกันตัว Shield จากแท่งเหล็กและไม้แปรรูป');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && ironIngotCount >= 8 && !adapter.hasItem('iron_chestplate') && !adapter.hasItem('diamond_chestplate')) {
+        this._currentGoal = 'crafting_iron_chestplate';
+        this.emitBanter('iron_gear_crafted');
+        await this.dispatchGoalToAI('คราฟต์เสื้อเกราะเหล็ก Iron Chestplate จากแท่งเหล็ก 8 แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && ironIngotCount >= 7 && !adapter.hasItem('iron_leggings') && !adapter.hasItem('diamond_leggings')) {
+        this._currentGoal = 'crafting_iron_leggings';
+        await this.dispatchGoalToAI('คราฟต์กางเกงเกราะเหล็ก Iron Leggings จากแท่งเหล็ก 7 แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && ironIngotCount >= 4 && !adapter.hasItem('iron_boots') && !adapter.hasItem('diamond_boots')) {
+        this._currentGoal = 'crafting_iron_boots';
+        await this.dispatchGoalToAI('คราฟต์รองเท้าเกราะเหล็ก Iron Boots จากแท่งเหล็ก 4 แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (hasWoodForTable && ironIngotCount >= 5 && !adapter.hasItem('iron_helmet') && !adapter.hasItem('diamond_helmet')) {
+        this._currentGoal = 'crafting_iron_helmet';
+        await this.dispatchGoalToAI('คราฟต์หมวกเกราะเหล็ก Iron Helmet จากแท่งเหล็ก 5 แท่ง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // D. If we have an Iron/Diamond Pickaxe, IMMEDIATELY scan for local Diamonds within 24m and mine them!
       if (hasIronPick || hasDiamondPick) {
         const localDiamonds = adapter.findBlocks({ matching: ['diamond_ore', 'deepslate_diamond_ore'], maxDistance: 24, count: 5 });
         if (localDiamonds.length > 0) {
@@ -501,20 +640,9 @@ class AutonomousEngine {
           if (signal.aborted) return;
           return;
         }
-
-        const { worldMemory } = require('../memory/world_memory');
-        const rememberedOres = worldMemory ? worldMemory.getDiscoveredOres() : {};
-        const diamondVein = Object.values(rememberedOres).find(o => o && o.name.includes('diamond'));
-        if (diamondVein) {
-          this._currentGoal = 'returning_to_remembered_diamonds';
-          logger.info(`💎 [Diamond Priority] Navigating directly to remembered Diamond Vein at (${diamondVein.coords.x}, ${diamondVein.coords.y}, ${diamondVein.coords.z})...`, 'AutonomousEngine');
-          await this.dispatchGoalToAI(`เดินทางกลับไปขุดแร่เพชรที่เคยบันทึกไว้ในความทรงจำที่พิกัด X=${diamondVein.coords.x}, Y=${diamondVein.coords.y}, Z=${diamondVein.coords.z}`);
-          if (signal.aborted) return;
-          return;
-        }
       }
 
-      // C. If Diamonds are spotted nearby but we LACK an Iron Pickaxe, RECORD & RUSH IRON PICKAXE!
+      // E. If Diamonds are spotted nearby but we LACK an Iron Pickaxe, RECORD & RUSH IRON PICKAXE!
       const nearbyDiamonds = adapter.findBlocks({ matching: ['diamond_ore', 'deepslate_diamond_ore'], maxDistance: 24, count: 5 });
       if (nearbyDiamonds.length > 0 && !hasIronPick && !hasDiamondPick) {
         const { worldMemory } = require('../memory/world_memory');
@@ -556,66 +684,38 @@ class AutonomousEngine {
         return;
       }
 
-      // Stockpile: On surface, ensure we have a solid wood supply (at least 8 logs or 16 planks) before diving deep!
-      if (!isUnderground && totalLogs < 6 && totalPlanks < 12) {
-        this._currentGoal = 'stockpiling_wood';
-        await this.dispatchGoalToAI('ค้นหาต้นไม้และตัดไม้ตุนไว้ 6 บล็อกให้เพียงพอสำหรับอุปกรณ์และคบเพลิง');
-        if (signal.aborted) return;
-        return;
+      // 1. Basic Wood Processing & Table (Recover nearby abandoned table or craft 1)
+      if (!hasCraftingTable) {
+        const nearbyTables = adapter.findBlocks({ matching: 'crafting_table', maxDistance: 16, count: 1 });
+        if (nearbyTables.length > 0) {
+          this._currentGoal = 'recovering_crafting_table';
+          await this.dispatchGoalToAI('ขุดเก็บโต๊ะคราฟต์ที่วางอยู่ใกล้ๆ กลับเข้ากระเป๋า');
+          if (signal.aborted) return;
+          return;
+        } else if (totalPlanks >= 4) {
+          this._currentGoal = 'crafting_table';
+          await this.dispatchGoalToAI('คราฟต์โต๊ะคราฟต์ Crafting Table จากไม้แปรรูป 4 แผ่น');
+          if (signal.aborted) return;
+          return;
+        }
       }
 
-      if (!hasWoodPrerequisites && (!hasAnyPickaxe || (totalLogs === 0 && !isUnderground))) {
-        this._currentGoal = 'chopping_wood';
-        await this.dispatchGoalToAI('ค้นหาต้นไม้ใกล้เคียงและตัดไม้ 4 บล็อกเพื่อเอาไม้มาทำด้ามจับ Sticks และโต๊ะคราฟต์ Crafting Table');
-        if (signal.aborted) return;
-        return;
-      }
-
-      if (totalLogs > 0 && totalPlanks < 8) {
+      if (totalLogs > 0 && totalPlanks < 4) {
         this._currentGoal = 'crafting_planks';
         await this.dispatchGoalToAI('นำไม้ท่อนในตัวมาคราฟต์เป็นไม้แปรรูป Planks');
         if (signal.aborted) return;
         return;
       }
 
-      if (!hasCraftingTable && totalPlanks >= 4) {
-        this._currentGoal = 'crafting_table';
-        await this.dispatchGoalToAI('คราฟต์โต๊ะคราฟต์ Crafting Table จากไม้แปรรูป 4 แผ่น');
-        if (signal.aborted) return;
-        return;
-      }
-
-      if (hasWoodPrerequisites && stickCount < 6 && totalPlanks >= 2) {
+      if (hasWoodPrerequisites && stickCount < 4 && totalPlanks >= 2) {
         this._currentGoal = 'crafting_sticks';
-        await this.dispatchGoalToAI('คราฟต์ไม้แท่ง Stick ตุนไว้ 8 อันสำหรับทำที่ขุดและคบเพลิง');
+        await this.dispatchGoalToAI('คราฟต์ไม้แท่ง Stick ตุนไว้สำหรับทำอุปกรณ์');
         if (signal.aborted) return;
         return;
       }
 
-      if (!hasAnyPickaxe) {
-        this._currentGoal = 'crafting_wooden_pickaxe';
-        await this.dispatchGoalToAI('คราฟต์ไม้แท่ง Stick และคราฟต์ที่ขุดไม้ Wooden Pickaxe');
-        if (signal.aborted) return;
-        return;
-      }
-
-      if (!hasAnyAxe && totalPlanks >= 3 && hasCraftingTable) {
-        this._currentGoal = 'crafting_wooden_axe';
-        await this.dispatchGoalToAI('คราฟต์ขวานไม้ Wooden Axe เพื่อเอาไว้ตัดไม้ให้เร็วขึ้น');
-        if (signal.aborted) return;
-        return;
-      }
-
-      // -------------------------------------------------------------------------
-      // 🪨 7.2 STAGE 2: Stone Age (Cobblestone, Stone Pickaxe, Stone Axe, Furnace, Coal)
-      // -------------------------------------------------------------------------
-      if (hasAnyPickaxe && cobblestoneCount < 16 && (!hasStonePick && !hasIronPick && !hasDiamondPick)) {
-        this._currentGoal = 'mining_stone';
-        await this.dispatchGoalToAI('หาบล็อกหิน Stone ใกล้ๆ เคลียร์ดินที่บังออก และขุดหินด้วยที่ขุดให้ได้ Cobblestone');
-        if (signal.aborted) return;
-        return;
-      }
-
+      // 2. 🪓 EAGER TOOL UPGRADES (STONE AGE TOP PRIORITY)
+      // Upgrade Pickaxe to Stone Pickaxe immediately when we have 3+ cobblestone!
       if (hasWoodPrerequisites && cobblestoneCount >= 3 && !hasStonePick && !hasIronPick && !hasDiamondPick) {
         this._currentGoal = 'crafting_stone_pickaxe';
         await this.dispatchGoalToAI('คราฟต์ที่ขุดหิน Stone Pickaxe จาก Cobblestone และไม้แท่ง');
@@ -623,15 +723,7 @@ class AutonomousEngine {
         return;
       }
 
-      // Spare Pickaxe Stockpiling: Ensure we carry at least 2 working pickaxes before deep mining!
-      const totalHealthyPickaxes = adapter.countItem('stone_pickaxe') + adapter.countItem('iron_pickaxe') + adapter.countItem('diamond_pickaxe');
-      if (hasWoodPrerequisites && cobblestoneCount >= 3 && totalHealthyPickaxes < 2 && hasCraftingTable) {
-        this._currentGoal = 'crafting_spare_stone_pickaxe';
-        await this.dispatchGoalToAI('คราฟต์ที่ขุดหิน Stone Pickaxe สำรองอีก 1 เล่มเพื่อเตรียมพร้อมก่อนลงเหมืองลึก');
-        if (signal.aborted) return;
-        return;
-      }
-
+      // Upgrade Axe to Stone Axe immediately when we have 3+ cobblestone!
       if (hasWoodPrerequisites && cobblestoneCount >= 3 && !hasStoneAxe && !hasIronAxe && !hasDiamondAxe) {
         this._currentGoal = 'crafting_stone_axe';
         await this.dispatchGoalToAI('คราฟต์ขวานหิน Stone Axe จาก Cobblestone และไม้แท่ง');
@@ -639,9 +731,51 @@ class AutonomousEngine {
         return;
       }
 
+      // Craft Stone Sword for defense immediately when we have 2+ cobblestone!
       if (hasWoodPrerequisites && cobblestoneCount >= 2 && !adapter.hasItem('stone_sword') && !adapter.hasItem('iron_sword') && !adapter.hasItem('diamond_sword')) {
         this._currentGoal = 'crafting_stone_sword';
         await this.dispatchGoalToAI('คราฟต์ดาบหิน Stone Sword สำหรับป้องกันตัว');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // 3. 🪓 BASIC WOODEN TOOLS (When no stone tools yet)
+      if (!hasAnyPickaxe && hasWoodPrerequisites) {
+        this._currentGoal = 'crafting_wooden_pickaxe';
+        await this.dispatchGoalToAI('คราฟต์ที่ขุดไม้ Wooden Pickaxe');
+        if (signal.aborted) return;
+        return;
+      }
+
+      if (!hasAnyAxe && hasWoodPrerequisites && totalPlanks >= 3 && hasCraftingTable) {
+        this._currentGoal = 'crafting_wooden_axe';
+        await this.dispatchGoalToAI('คราฟต์ขวานไม้ Wooden Axe เพื่อเอาไว้ตัดไม้ให้เร็วขึ้น');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // 4. Initial Wood Gathering (Only if missing basic wood)
+      if (!hasWoodPrerequisites && (!hasAnyPickaxe || (totalLogs === 0 && !isUnderground))) {
+        this._currentGoal = 'chopping_wood';
+        await this.dispatchGoalToAI('ค้นหาต้นไม้ใกล้เคียงและตัดไม้ 4 บล็อกเพื่อเอาไม้มาทำด้ามจับ Sticks และโต๊ะคราฟต์ Crafting Table');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // 5. Stockpile Wood (Done WITH AXE)
+      if (!isUnderground && totalLogs < 6 && totalPlanks < 12) {
+        this._currentGoal = 'stockpiling_wood';
+        await this.dispatchGoalToAI('ค้นหาต้นไม้และตัดไม้ตุนไว้ 6 บล็อกให้เพียงพอสำหรับอุปกรณ์และคบเพลิง');
+        if (signal.aborted) return;
+        return;
+      }
+
+      // -------------------------------------------------------------------------
+      // 🪨 7.2 STAGE 2: Stone Age (Cobblestone, Furnace, Coal)
+      // -------------------------------------------------------------------------
+      if (hasAnyPickaxe && cobblestoneCount < 16 && (!hasStonePick && !hasIronPick && !hasDiamondPick)) {
+        this._currentGoal = 'mining_stone';
+        await this.dispatchGoalToAI('หาบล็อกหิน Stone ใกล้ๆ เคลียร์ดินที่บังออก และขุดหินด้วยที่ขุดให้ได้ Cobblestone');
         if (signal.aborted) return;
         return;
       }
@@ -759,10 +893,18 @@ class AutonomousEngine {
         return;
       }
 
-      // 3. Mine More Iron if needed for full set
+      // 3. Mine More Iron / Spelunk Caves if needed for full set
       const totalIron = ironIngotCount + rawIronCount;
       if ((hasStonePick || hasIronPick || hasDiamondPick) && totalIron < 24) {
-        const exposedIron = dsl.findNearbyExposedOres(14).filter(bPos => {
+        const exposedOres = dsl.findNearbyExposedOres(16);
+        if (exposedOres.length >= 2 && botPos.y < 60) {
+          this._currentGoal = 'spelunking_cave';
+          await this.dispatchGoalToAI('สำรวจถ้ำใต้ดิน เดินสำรวจทางถ้ำ ปักคบเพลิง และเก็บแร่ตามผนังถ้ำทั้งหมด');
+          if (signal.aborted) return;
+          return;
+        }
+
+        const exposedIron = exposedOres.filter(bPos => {
           const b = adapter.getBlockAt(bPos);
           return b && b.name.includes('iron');
         });
@@ -774,6 +916,11 @@ class AutonomousEngine {
         } else if (botPos.y > 16) {
           this._currentGoal = 'staircase_mining_iron';
           await this.dispatchGoalToAI('ขุดบันไดลงใต้ดิน Staircase Mining สู่ระดับ Y=16 เพื่อค้นหาแร่เหล็ก Iron Ore');
+          if (signal.aborted) return;
+          return;
+        } else {
+          this._currentGoal = 'branch_mining_iron';
+          await this.dispatchGoalToAI('ขุดเหมืองแบบก้างปลา Fishbone Mining ที่ระดับ Y=16 เพื่อค้นหาแร่เหล็ก Iron Ore');
           if (signal.aborted) return;
           return;
         }
@@ -830,12 +977,27 @@ class AutonomousEngine {
         }
       }
 
-      // 3. Keep Staircase Mining Deep Underground:
-      if (hasAnyPickaxe && botPos.y > -53) {
-        this._currentGoal = 'staircase_mining_down';
-        await this.dispatchGoalToAI('ขุดบันไดเฉียง 1x2 ลงลึกไปที่ระดับ Y=-54 เพื่อค้นหาแร่เหล็กและเพชร');
-        if (signal.aborted) return;
-        return;
+      // 3. Deep Ore Mining (Explore Deepslate Caves, Staircase down, or Fishbone at bottom):
+      if (hasAnyPickaxe) {
+        const deepOres = dsl.findNearbyExposedOres(16);
+        if (deepOres.length >= 2 && botPos.y < 30) {
+          this._currentGoal = 'spelunking_deep_cave';
+          await this.dispatchGoalToAI('สำรวจถ้ำใต้ดินลึก เดินสำรวจทางถ้ำ ปักคบเพลิง และเก็บแร่ตามผนังถ้ำทั้งหมด');
+          if (signal.aborted) return;
+          return;
+        }
+
+        if (botPos.y > -53) {
+          this._currentGoal = 'staircase_mining_down';
+          await this.dispatchGoalToAI('ขุดบันไดเฉียง 1x2 ลงลึกไปที่ระดับ Y=-54 เพื่อค้นหาแร่เหล็กและเพชร');
+          if (signal.aborted) return;
+          return;
+        } else {
+          this._currentGoal = 'branch_mining_diamonds';
+          await this.dispatchGoalToAI('ขุดเหมืองแบบก้างปลา Fishbone Mining ที่ระดับ Y=-54 เพื่อค้นหาแร่เพชร');
+          if (signal.aborted) return;
+          return;
+        }
       }
 
       // =========================================================================

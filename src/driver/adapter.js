@@ -11,6 +11,27 @@ class DriverAdapter {
   constructor(bot, registryResolver) {
     this.bot = bot;
     this.resolver = registryResolver;
+    this._isDigging = false;
+    this._lastDamageTime = 0;
+
+    if (this.bot && typeof this.bot.on === 'function') {
+      this.bot.on('entityHurt', (entity) => {
+        if (entity === this.bot.entity) {
+          this._lastDamageTime = Date.now();
+          if (this._isDigging) {
+            logger.warn('💥 [Combat Reflex] Bot was hurt while digging! Aborting dig immediately to defend...', 'DriverAdapter');
+            try { this.bot.stopDigging(); } catch (_) {}
+            this._isDigging = false;
+          }
+          const hostiles = this.findHostiles(10);
+          if (hostiles.length > 0) {
+            this.autoEquipArmor().catch(() => {});
+            this.equipHighestAttackWeapon().catch(() => {});
+            this.attackEntity(hostiles[0]).catch(() => {});
+          }
+        }
+      });
+    }
   }
 
   get rawBot() {
@@ -235,12 +256,10 @@ class DriverAdapter {
 
     this._isDigging = true;
     try {
-      // 1. Natural Human Reach & Line-of-Sight Approach
-      const botPos = this.getPosition();
-      // 1. Natural Human Reach (Minecraft Reach = 4.5m, optimal standing distance = 1.8 - 2.4m)
+      // 1. Natural Arm Reach (Minecraft reach = 4.5m, comfortable standing distance = 2.4m - 3.5m)
       const dist = this.distanceTo(blockPos);
-      if (dist > 3.2) {
-        await this.goto(blockPos.x, blockPos.y, blockPos.z, 2.0, 3000).catch(() => {});
+      if (dist > 3.8) {
+        await this.goto(blockPos.x, blockPos.y, blockPos.z, 2.8, 3000).catch(() => {});
       }
 
       // 2. Stop pathfinder & velocity (Prevents in-air mining penalty & velocity cancellation)
@@ -255,6 +274,16 @@ class DriverAdapter {
       if (!freshBlock || !freshBlock.diggable || freshBlock.name === 'air' || freshBlock.name === 'cave_air') return;
       await this.equipBestTool(freshBlock, true);
       await new Promise(r => setTimeout(r, 80));
+
+      // Check for immediate threats before starting dig
+      const immediateThreats = this.findHostiles(6);
+      if (immediateThreats.length > 0) {
+        logger.info(`⚔️ [DigGuard] Hostile threat '${immediateThreats[0].name}' nearby. Aborting dig to fight!`, 'DriverAdapter');
+        await this.autoEquipArmor().catch(() => {});
+        await this.equipHighestAttackWeapon().catch(() => {});
+        await this.attackEntity(immediateThreats[0]);
+        return;
+      }
 
       // 4. Continuously lock gaze on block center
       const targetCenter = new Vec3(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5);
@@ -273,21 +302,24 @@ class DriverAdapter {
         if (this.bot.targetDigBlock) {
           this.bot.stopDigging();
         }
+        logger.warn(`⛏️ Digging '${freshBlock.name}' interrupted: ${e.message}`, 'DriverAdapter');
       }
 
       // 6. Post-dig Verification
       const checkAfter = this.getBlockAt(blockPos);
       if (checkAfter && checkAfter.name !== 'air' && checkAfter.name !== 'cave_air' && checkAfter.diggable && !checkAfter.name.includes('water') && !checkAfter.name.includes('lava')) {
-        logger.warn(`Block '${checkAfter.name}' did not break on first pass. Retrying with direct lock...`, 'DriverAdapter');
         this.bot.clearControlStates();
         await this.equipBestTool(checkAfter, true);
         await this.lookAt(targetCenter);
-        await Promise.race([
-          this.bot.dig(checkAfter, true),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Dig retry timeout')), timeoutMs))
-        ]).catch(() => {
+        try {
+          await Promise.race([
+            this.bot.dig(checkAfter, true),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Dig retry timeout')), timeoutMs))
+          ]);
+        } catch (err) {
           if (this.bot.targetDigBlock) this.bot.stopDigging();
-        });
+          logger.warn(`⛏️ Dig retry failed: ${err.message}`, 'DriverAdapter');
+        }
       }
     } finally {
       this._isDigging = false;
@@ -403,6 +435,10 @@ class DriverAdapter {
     }));
   }
 
+  getInventoryItems() {
+    return this.getInventory();
+  }
+
   getHeldItem() {
     return this.bot?.heldItem || null;
   }
@@ -505,9 +541,25 @@ class DriverAdapter {
           } catch (_) {}
         }
       }
+    } else if (preferredCategory === 'axe') {
+      const tierRank = { netherite: 6, diamond: 5, iron: 4, stone: 3, golden: 2, wooden: 1 };
+      const axes = this.bot.inventory.items().filter(item => item.name.endsWith('_axe') && !item.name.includes('pickaxe'));
+      if (axes.length > 0) {
+        axes.sort((a, b) => {
+          const tierA = Object.keys(tierRank).find(t => a.name.includes(t)) || 'wooden';
+          const tierB = Object.keys(tierRank).find(t => b.name.includes(t)) || 'wooden';
+          return (tierRank[tierB] || 1) - (tierRank[tierA] || 1);
+        });
+        const bestAxe = axes[0];
+        if (held && held.name === bestAxe.name) return; // Already holding the highest tier axe!
+        try {
+          await this.bot.equip(bestAxe, 'hand');
+          return;
+        } catch (_) {}
+      }
     } else if (preferredCategory) {
       const tierRank = { netherite: 6, diamond: 5, iron: 4, stone: 3, golden: 2, wooden: 1 };
-      const matchingTools = this.bot.inventory.items().filter(item => item.name.includes(preferredCategory));
+      const matchingTools = this.bot.inventory.items().filter(item => item.name.endsWith(`_${preferredCategory}`));
       if (matchingTools.length > 0) {
         matchingTools.sort((a, b) => {
           const tierA = Object.keys(tierRank).find(t => a.name.includes(t)) || 'wooden';
@@ -746,14 +798,25 @@ class DriverAdapter {
     }
   }
 
+  isDaytime() {
+    if (!this.bot || !this.bot.time) return true;
+    const tod = this.bot.time.timeOfDay;
+    return tod >= 0 && tod < 12500;
+  }
+
   isHostile(entity) {
     if (!entity || !entity.name) return false;
+    const name = entity.name.toLowerCase();
+    // Neutral spiders during daytime
+    if (name === 'spider' && this.isDaytime() && this.distanceTo(entity.position) > 3.0) {
+      return false;
+    }
     const hostiles = [
       'zombie', 'skeleton', 'spider', 'creeper', 'enderman', 'witch', 'drowned', 'husk',
       'stray', 'cave_spider', 'zombified_piglin', 'piglin', 'hoglin', 'zoglin', 'phantom',
       'slime', 'magma_cube', 'pillager', 'vindicator', 'ravager', 'evoker', 'vex', 'silverfish'
     ];
-    return hostiles.includes(entity.name.toLowerCase()) || entity.type === 'hostile' || entity.type === 'mob';
+    return hostiles.includes(name) || entity.type === 'hostile';
   }
 
   isHuntable(entity) {
@@ -803,6 +866,20 @@ class DriverAdapter {
     return entities[0] || null;
   }
 
+  findEntities(filter = {}) {
+    if (!this.bot || !this.bot.entities) return [];
+    const maxDistance = filter.maxDistance || 16;
+    const type = filter.type;
+    return Object.values(this.bot.entities).filter(e => {
+      if (!e || e === this.bot.entity || !e.position) return false;
+      if (this.distanceTo(e.position) > maxDistance) return false;
+      if (type === 'passive' || type === 'animal') return this.isHuntable(e);
+      if (type === 'hostile' || type === 'monster') return this.isHostile(e);
+      if (type && e.type !== type) return false;
+      return true;
+    }).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
+  }
+
   findHostiles(maxDistance = 12) {
     if (!this.bot || !this.bot.entities) return [];
     return Object.values(this.bot.entities).filter(e =>
@@ -831,10 +908,10 @@ class DriverAdapter {
   findDroppedItems(maxDistance = 16) {
     if (!this.bot || !this.bot.entities) return [];
     const junkNames = new Set([
-      'leaf_litter', 'diorite', 'granite', 'andesite', 'tuff', 'gravel',
-      'wheat_seeds', 'short_grass', 'flint', 'dripstone_block', 'pointed_dripstone',
-      'oak_sapling', 'birch_sapling', 'spruce_sapling', 'rotten_flesh', 'poisonous_potato',
-      'wooden_pickaxe', 'wooden_axe', 'wooden_sword'
+      'dirt', 'cobblestone', 'cobbled_deepslate', 'deepslate', 'stone', 'sand', 'gravel',
+      'diorite', 'granite', 'andesite', 'tuff', 'flint', 'leaf_litter', 'short_grass',
+      'wheat_seeds', 'oak_sapling', 'birch_sapling', 'spruce_sapling', 'rotten_flesh',
+      'poisonous_potato', 'wooden_pickaxe', 'wooden_axe', 'wooden_sword', 'stick'
     ]);
 
     return Object.values(this.bot.entities).filter(e => {
