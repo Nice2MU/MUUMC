@@ -410,7 +410,9 @@ class DriverAdapter {
   hasItem(name) {
     if (!this.bot || !this.bot.inventory) return false;
     const clean = name.toLowerCase().replace(/^minecraft:/, '');
-    const slots = this.bot.inventory.slots || [];
+    const slots = (this.bot.inventory.slots && this.bot.inventory.slots.length > 0)
+      ? this.bot.inventory.slots
+      : (typeof this.bot.inventory.items === 'function' ? this.bot.inventory.items() : []);
     for (const slot of slots) {
       if (slot && slot.name && slot.name.toLowerCase().replace(/^minecraft:/, '') === clean) {
         return true;
@@ -425,7 +427,9 @@ class DriverAdapter {
   countItem(name) {
     if (!this.bot || !this.bot.inventory) return 0;
     const clean = name.toLowerCase().replace(/^minecraft:/, '');
-    const slots = this.bot.inventory.slots || [];
+    const slots = (this.bot.inventory.slots && this.bot.inventory.slots.length > 0)
+      ? this.bot.inventory.slots
+      : (typeof this.bot.inventory.items === 'function' ? this.bot.inventory.items() : []);
     let count = 0;
     for (const slot of slots) {
       if (slot && slot.name && slot.name.toLowerCase().replace(/^minecraft:/, '') === clean) {
