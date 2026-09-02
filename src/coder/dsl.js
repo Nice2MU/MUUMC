@@ -342,6 +342,10 @@ class SafeDSL {
       }
     }
 
+    if (chopped === 0) {
+      return { success: false, chopped: 0, error: 'No reachable trees found within range' };
+    }
+
     return { success: true, chopped };
   }
 

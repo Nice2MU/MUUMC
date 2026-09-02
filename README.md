@@ -214,8 +214,11 @@ assets/mcp/muu-mc/
 │   │   ├── skill_manager.js             # Skill library & fast Cache Matcher (<0.1s)
 │   │   ├── reflection_manager.js        # Error reflection & lesson storage
 │   │   └── world_memory.js              # Multi-world landmark & chest storage (Atomic write)
+│   ├── voice/
+│   │   ├── voice_client.js              # WebSocket bridge client (connects to MuuVoiceBridge port 25570)
+│   │   └── voice_manager.js             # Voice buffer manager & MCP notifications dispatcher
 │   └── mcp/
-│       ├── tools.js                     # Handlers for all 7 MCP Tools
+│       ├── tools.js                     # Handlers for all MCP Tools (including Voice & Chat)
 │       └── resources.js                 # Handlers for MCP Resources
 ├── data/
 │   ├── skills/                          # 5 Starter Skills (follow, collect, craft, defend, sleep)

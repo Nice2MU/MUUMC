@@ -35,3 +35,11 @@ autonomous:
   auto_sleep: true
   replant_saplings: true
 
+voice_bridge:
+  enabled: true
+  ws_port: 25570
+  auth_token: "muu_secure_voice_bridge_token_8899"
+  auto_reconnect: true
+  reconnect_delay_ms: 3000
+
+

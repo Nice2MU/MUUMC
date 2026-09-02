@@ -11,6 +11,8 @@ const { debuggerInstance } = require('../coder/debugger');
 const { skillManager } = require('../memory/skill_manager');
 const { worldMemory } = require('../memory/world_memory');
 const { reflectionManager } = require('../memory/reflection_manager');
+const { voiceManager } = require('../voice/voice_manager');
+const { voiceBridgeClient } = require('../voice/voice_client');
 
 const TOOL_DEFINITIONS = [
   {
@@ -134,6 +136,34 @@ const TOOL_DEFINITIONS = [
       required: ['action'],
     },
   },
+  {
+    name: 'muu_mc_get_recent_voice_chats',
+    description: 'Retrieves recent in-game voice chat utterances captured by Simple Voice Chat near Muumiu, including player names and distances.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum number of recent voice events to return (default 5)',
+          default: 5,
+        },
+      },
+    },
+  },
+  {
+    name: 'muu_mc_play_tts_voice',
+    description: 'Plays Muumiu TTS voice directly through the in-game Simple Voice Chat microphone in 3D spatial directional audio.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        audio_base64: {
+          type: 'string',
+          description: 'Base64-encoded WAV audio data (48,000 Hz 16-bit mono PCM).',
+        },
+      },
+      required: ['audio_base64'],
+    },
+  },
 ];
 
 class MCPToolHandler {
@@ -146,6 +176,8 @@ class MCPToolHandler {
 
     try {
       switch (name) {
+        case 'muu_mc_play_tts_voice':
+          return await this._handlePlayTtsVoice(args);
         case 'muu_mc_execute_task':
           return await this._handleExecuteTask(args);
         case 'muu_mc_quick_action':
@@ -160,6 +192,8 @@ class MCPToolHandler {
           return await this._handleListSkills(args);
         case 'muu_mc_manage_memory':
           return await this._handleManageMemory(args);
+        case 'muu_mc_get_recent_voice_chats':
+          return await this._handleGetRecentVoiceChats(args);
         default:
           throw new Error(`Unknown MCP Tool: ${name}`);
       }
@@ -205,6 +239,14 @@ class MCPToolHandler {
             adapter,
             args: { ...(cacheMatch.args || {}), ...(args.parameters || {}) },
           });
+          if (result.result && result.result.success === false) {
+            return {
+              status: 'error',
+              source: 'skill_cache',
+              skill_name: cacheMatch.skill_name,
+              error: result.result.error || 'Skill execution failed',
+            };
+          }
           return {
             status: 'success',
             source: 'skill_cache',
@@ -378,6 +420,40 @@ class MCPToolHandler {
       default:
         throw new Error(`Unknown memory action: ${args.action}`);
     }
+  }
+
+  static async _handleGetRecentVoiceChats(args) {
+    const limit = args.limit || 5;
+    const events = voiceManager.getRecentEvents(limit);
+    return {
+      status: 'success',
+      total_events: events.length,
+      voice_chats: events.map(e => ({
+        id: e.id,
+        player_name: e.player ? e.player.name : 'Unknown',
+        player_uuid: e.player ? e.player.uuid : null,
+        distance_meters: e.player ? e.player.distance : null,
+        duration_sec: e.duration_sec,
+        world: e.player ? e.player.world : null,
+        timestamp: e.timestamp,
+        received_at: e.received_at,
+      })),
+    };
+  }
+
+  static async _handlePlayTtsVoice(args) {
+    const audioBase64 = args.audio_base64;
+    if (!audioBase64) {
+      return { status: 'error', error: 'audio_base64 parameter is required' };
+    }
+    const success = voiceBridgeClient.sendVoice(audioBase64);
+    return {
+      status: success ? 'success' : 'failed',
+      dispatched: success,
+      message: success
+        ? 'Voice successfully transmitted to in-game Simple Voice Chat'
+        : 'Voice Bridge is not connected to server',
+    };
   }
 }
 

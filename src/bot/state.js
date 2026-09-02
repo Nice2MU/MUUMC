@@ -100,6 +100,54 @@ class GameStateScanner {
     entities.sort((a, b) => a.distance - b.distance);
     return entities.slice(0, 15);
   }
+
+  /**
+   * Evaluates the bot's TRUE physical real-time activity in the Minecraft world.
+   * Grounded directly in Mineflayer physical states, not theoretical planning loops.
+   */
+  getRealtimeActivity() {
+    const rawBot = this.adapter?.rawBot;
+    if (!rawBot) return 'กำลังยืนพัก';
+
+    const pos = this.adapter.getPosition();
+    const isUnderground = pos.y < 55;
+
+    // 1. Physically swinging tool to dig a block right now
+    const digBlock = rawBot.targetDigBlock;
+    if (digBlock && digBlock.name) {
+      const bName = digBlock.name.toLowerCase();
+      if (bName.includes('log') || bName.includes('wood') || bName.includes('stem')) return 'กำลังตัดไม้';
+      if (bName.includes('diamond')) return 'กำลังขุดแร่เพชร';
+      if (bName.includes('iron')) return 'กำลังขุดแร่เหล็ก';
+      if (bName.includes('coal')) return 'กำลังขุดแร่ถ่าน';
+      if (bName.includes('gold')) return 'กำลังขุดแร่ทอง';
+      if (bName.includes('redstone') || bName.includes('lapis') || bName.includes('copper')) return 'กำลังขุดแร่';
+      if (bName.includes('diorite') || bName.includes('granite') || bName.includes('andesite') || bName.includes('tuff')) return 'กำลังขุดหินในเหมือง';
+      if (bName.includes('deepslate') || bName.includes('stone') || bName.includes('cobblestone')) return 'กำลังขุดหินทำทาง/หาแร่';
+      if (bName.includes('dirt') || bName.includes('gravel') || bName.includes('sand')) return 'กำลังขุดดิน/เคลียร์ทาง';
+      return `กำลังขุดบล็อก ${bName}`;
+    }
+
+    // 2. Eating food
+    if (rawBot.entity?.isEating) return 'กำลังกินอาหาร';
+
+    // 3. Combat
+    if (this.adapter.isInCombat && this.adapter.isInCombat()) return 'กำลังต่อสู้กับมอนสเตอร์';
+
+    // 4. Actively pathfinding/walking
+    if (rawBot.pathfinder?.isMoving()) {
+      if (isUnderground) return 'กำลังเดินสำรวจในเหมืองใต้ดิน';
+      return 'กำลังเดินสำรวจรอบๆ';
+    }
+
+    // 5. Standing underground vs surface
+    if (isUnderground) {
+      return 'กำลังลงเหมืองหาแร่อยู่ใต้ดิน';
+    }
+
+    // 6. Surface idle / exploration
+    return 'กำลังเดินสำรวจรอบๆ';
+  }
 }
 
 module.exports = {

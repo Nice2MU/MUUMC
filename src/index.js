@@ -17,6 +17,8 @@ const { logger } = require('./bot/logger');
 const { botClient } = require('./bot/client');
 const { TOOL_DEFINITIONS, MCPToolHandler } = require('./mcp/tools');
 const { RESOURCE_DEFINITIONS, MCPResourceHandler } = require('./mcp/resources');
+const { voiceBridgeClient } = require('./voice/voice_client');
+const { voiceManager } = require('./voice/voice_manager');
 
 // Safeguard #6: Strict Stdio Isolation
 // Intercept non-JSON stdout writes from underlying libraries and route them to stderr
@@ -116,7 +118,12 @@ async function main() {
   await server.connect(transport);
   logger.info('✅ muu-mc MCP Server connected via stdio transport successfully!', 'MCPServer');
 
-  // 4. Background Bot Connection (non-blocking so MCP server responds immediately)
+  // 4. Initialize In-Game Simple Voice Chat Bridge & Bot Client Notifications
+  voiceManager.setMcpServer(server);
+  botClient.setMcpServer(server);
+  voiceBridgeClient.start();
+
+  // 5. Background Bot Connection (non-blocking so MCP server responds immediately)
   setTimeout(() => {
     botClient.connect().catch(e => {
       logger.warn(`Initial bot connect notice: ${e.message}`, 'MCPServer');
