@@ -22,6 +22,7 @@
 - 🔒 **Universal Sandbox & 1-Shot Self-Healing**: Safe VM execution with auto-unwrap for Markdown and wrappers, 15s timeout guard, and automatic 1-shot runtime error repair.
 - 💾 **Two-Tier Atomic Memory**: Multi-world landmark tracking (`landmarks.json`) and chest inventories (`chests.json`) indexed by server IP/port with crash-proof atomic writes (`.tmp ➔ rename`).
 - 🤖 **Autonomous Proactive Engine**: Automatic hunger management, nighttime bed sleeping, sapling replanting, and social gaze with **0.01s Instant Preemption** when player commands arrive.
+- 🎙️ **Simple Voice Chat & Headless Companion Integration**: Real-time bi-directional voice chat bridge via `MuuVoiceBridge` (port 25570), physical action grounding, and support for the lightweight headless runner (`run_game.sh`).
 - 🌐 **Embedded 3D WebGL Viewer**: Live first-person and third-person orbital camera stream directly in your web browser (`http://127.0.0.1:3007`).
 
 ---
