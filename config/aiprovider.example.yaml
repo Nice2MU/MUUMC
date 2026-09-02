@@ -1,8 +1,8 @@
 # ==========================================================
-# AI Provider Configuration for muu-mc (Agent 2 & In-Game Chat)
+# AI Provider Configuration Template for muu-mc
 # ==========================================================
 
-active_provider: "openrouter" # ollama or openrouter
+active_provider: "openrouter"
 
 ollama:
   base_url: "http://127.0.0.1:11434"
@@ -13,7 +13,7 @@ ollama:
   keep_alive: "1h"
 
 openrouter:
-  api_key: "" # Set OPENROUTER_API_KEY env var or auto-resolved from MuumiuLLM
+  api_key: "" # ใส่ OpenRouter API Key หรือปล่อยว่างเพื่อสืบทอดจาก MuumiuLLM
   base_url: "https://openrouter.ai/api/v1"
   model: "minimax/minimax-m3:free"
   temperature: 0.2

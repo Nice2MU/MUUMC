@@ -16,3 +16,4 @@ data/worlds/**/.tmp*
 # OS files
 .DS_Store
 Thumbs.db
+config/aiprovider.yaml
