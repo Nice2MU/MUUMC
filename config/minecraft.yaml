@@ -3,8 +3,8 @@
 # ==========================================================
 
 server:
-  host: "127.0.0.1"
-  port: 25565
+  host: "cynthia-literally.tun.ply.gg"
+  port: 16520
   version: false # false = auto-detect server version dynamically (1.16 - 1.21+)
   auth: "microsoft" # offline (cracked/local) or microsoft
 
@@ -36,8 +36,11 @@ autonomous:
   replant_saplings: true
 
 voice_bridge:
-  enabled: true
+  # Native Minecraft Plugin Messaging Channel ('muu:voice' on port 25565) is active!
+  # WebSocket (Port 25570) is disabled since port 25565 handles everything directly:
+  enabled: false
+  host: "127.0.0.1"
   ws_port: 25570
   auth_token: "muu_secure_voice_bridge_token_8899"
-  auto_reconnect: true
-  reconnect_delay_ms: 3000
+  auto_reconnect: false
+  reconnect_delay_ms: 5000

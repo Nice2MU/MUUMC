@@ -354,5 +354,9 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
     - Sets default staircase mining depth to the optimal Iron layer (`Y=16`) instead of plunging to Bedrock (`Y=-54`). Dispatches straight 1x2 Strip Mining tunnels (18 blocks long) and Fishbone (Branch) mining at optimal depth.
 14. **🦘 Vanilla Auto-Jump Leap & Water Buoyancy Engine (`src/driver/plugin_wrappers.js`)**:
     - Elevates `stepHeight` to `1.2` and applies forward leap velocity (`0.24`) with jump lock during Pathfinder movements to effortlessly scale 1-block steps without collision freezing. Holds continuous buoyancy jump while in water to prevent drowning.
+15. **🎙️ Native Minecraft Plugin Messaging Channel (`muu:voice` on Port 25565)**:
+    - Eliminates the need for external secondary ports (25570), additional Playit.gg tunnels, or local firewall port forwarding.
+    - All Simple Voice Chat in-game microphone captures and KaoPadTTS playback audio are encapsulated inside Minecraft's native `custom_payload` protocol channel (`muu:voice`) over the standard game connection (port 25565).
+    - Features transparent auto-chunking (payloads $\le 30\text{KB}$ sent in a single packet; payloads $> 30\text{KB}$ chunked into $28\text{KB}$ packets with automated reassembly) for zero-latency, zero-loss communication.
 
 

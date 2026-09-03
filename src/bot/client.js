@@ -10,6 +10,7 @@ const { GameStateScanner } = require('./state');
 const { SafeDSL } = require('../coder/dsl');
 const { AutonomousEngine } = require('./autonomous_engine');
 const { InGameChatCompanion } = require('./chat_companion');
+const { voiceBridgeClient } = require('../voice/voice_client');
 
 class MinecraftBotClient {
   constructor(customConfig = null) {
@@ -108,6 +109,7 @@ class MinecraftBotClient {
       logger.info(`✅ Bot '${this.bot.username}' logged into server successfully!`, 'BotClient');
       this.isConnected = true;
       this.retryCount = 0;
+      voiceBridgeClient.attachBot(this.bot);
     });
 
     this.bot.on('spawn', () => {
@@ -136,6 +138,7 @@ class MinecraftBotClient {
       this.autonomousEngine.stop();
       this.isConnected = false;
       this.isSpawned = false;
+      voiceBridgeClient.detachBot();
       this._scheduleReconnect();
     });
 
@@ -144,11 +147,15 @@ class MinecraftBotClient {
       this.autonomousEngine.stop();
       this.isConnected = false;
       this.isSpawned = false;
+      voiceBridgeClient.detachBot();
       this._scheduleReconnect();
     });
 
     this.bot.on('error', (err) => {
       logger.error(`Bot error: ${err.message}`, 'BotClient');
+      if (!this.isConnected) {
+        this._scheduleReconnect();
+      }
     });
 
     // 💬 In-Game Chat Pipeline -> Forward directly to Agent 1 (MuumiuLLM)
