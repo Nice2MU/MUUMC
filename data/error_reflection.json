@@ -1,23 +1,5 @@
 [
   {
-    "id": "err_1788187793698",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-08-31T14:49:53.698Z"
-  },
-  {
-    "id": "err_1788187839513",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-08-31T14:50:39.513Z"
-  },
-  {
     "id": "err_1788187887753",
     "error_signature": "Cannot mine block: line of sight obstructed",
     "task_pattern": "mine_block",
@@ -448,5 +430,23 @@
     "fix_summary": "Check line-of-sight and step closer before digging",
     "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
     "timestamp": "2026-09-01T19:05:54.800Z"
+  },
+  {
+    "id": "err_1788368797985",
+    "error_signature": "Unexpected token ')'",
+    "task_pattern": "ค้นหาต้นไม้ใกล้เคียงและตัดไม้ 4 บล็อกเพื่อเอาไม้มาทำด้ามจับ Sticks และโต๊ะคราฟต์ Crafting Table",
+    "failed_code": "const blocks = world.findBlocks({ matching: ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'], maxDistance: 32, count: 4 });\nif (blocks && blocks.length > 0) {\n  const logsCollected = [];\n  for (const pos of blocks) {\n    const block = world.getBlockAt(pos);\n    if (block) {\n      await dsl.safeDigBlock(block, { sneak: true });\n      logsCollected.push(block.name);\n    }\n  }\n  await dsl.pickupNearbyItems(16);\n}\nconst woodTypes = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'];\nlet woodSource = null;\nfor (const w of woodTypes) {\n  if (world.hasItem(w)) { woodSource = w; break; }\n}\nif (woodSource) {\n  const planks = woodSource.replace('_log', '_planks');\n  await dsl.craftItem(planks, 2);\n  await dsl.craftItem('stick', 4);\n  await dsl.craftItem('crafting_table', 1);\n} else {\n  dsl.chat('No wood found in inventory after chopping');",
+    "fix_summary": "Self-healed 1-shot repair",
+    "repaired_code": "async function chopAndCraft() {\n  const blocks = world.findBlocks({\n    matching: ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'],\n    maxDistance: 32,\n    count: 4\n  });\n  if (blocks && blocks.length > 0) {\n    for (const pos of blocks) {\n      const block = world.getBlockAt(pos);\n      if (block) {\n        await dsl.safeDigBlock(block, { sneak: true });\n      }\n    }\n    await dsl.pickupNearbyItems(16);\n  }\n\n  const woodTypes = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'];\n  let woodSource = null;\n  for (const w of woodTypes) {\n    if (world.hasItem(w)) {\n      woodSource = w;\n      break;\n    }\n  }\n  if (woodSource) {\n    const planks = woodSource.replace('_log', '_planks');\n    await dsl.craftItem(planks, 2);\n    await dsl.craftItem('stick', 4);\n    await dsl.craftItem('crafting_table', 1);\n  } else {\n    dsl.chat('No wood found in inventory after chopping');\n  }\n}\n\nchopAndCraft();",
+    "timestamp": "2026-09-02T17:06:37.985Z"
+  },
+  {
+    "id": "err_1788372970703",
+    "error_signature": "Unexpected end of input",
+    "task_pattern": "ค้นหาต้นไม้ใกล้เคียงและตัดไม้ 4 บล็อกเพื่อเอาไม้มาทำด้ามจับ Sticks และโต๊ะคราฟต์ Crafting Table",
+    "failed_code": "```javascript\nawait dsl.navigateXZ(-30, 74, 1);\nawait dsl.safeDigBlock({ x: -29, y: 77, z: 76 }, { tool: \"pickaxe\" });\nawait dsl.safeDigBlock({ x: -29, y: 78, z: 76 }, { tool: \"pickaxe\" });\nawait dsl.safeDigBlock({ x: -29, y: 79, z: 76 }, { tool: \"pickaxe\" });\nawait dsl.safeDigBlock({ x:",
+    "fix_summary": "Self-healed 1-shot repair",
+    "repaired_code": "await dsl.navigateXZ(-30, 74, 1);\nawait dsl.safeDigBlock({ x: -29, y: 77, z: 76 }, { tool: \"pickaxe\" });\nawait dsl.safeDigBlock({ x: -29, y: 78, z: 76 }, { tool: \"pickaxe\" });\nawait dsl.safeDigBlock({ x: -29, y: 79, z: 76 }, { tool: \"pickaxe\" });\nawait dsl.safeDigBlock({ x: -30, y: 74, z: 68 }, { tool: \"pickaxe\" });",
+    "timestamp": "2026-09-02T18:16:10.703Z"
   }
 ]

@@ -342,5 +342,17 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
    - Recursively extracts 26-neighbor connected ore clusters until 100% cleared.
 8. **🐕 Non-Interfering Digging Watchdog (`src/bot/autonomous_engine.js`)**:
    - `if (adapter._isDigging) return;` guard prevents false anti-stall interruptions while swinging tools.
+9. **💥 Creeper Hit-and-Run Sprint Evasion (`src/driver/adapter.js`)**:
+   - Executes dynamic hit-and-run evasion against creepers: strikes with knockback, then immediately sprint-jumps backward 6–7 blocks with an impulse velocity boost (`0.28`). Cancels the creeper's fuse and avoids explosions completely.
+10. **🧲 Auto-Vacuum Step on Dig (`src/coder/dsl.js`)**:
+    - Bridges the gap between player mining reach (3.8m–4.5m) and Minecraft's item suction radius (1.5m). Upon breaking any block, the bot steps forward within 0.8m (`gotoXZ`) to vacuum all drops straight into inventory.
+11. **🛡️ Deep Ore Hazard Assessment (`isOreSafeToHarvest` in `src/coder/dsl.js`)**:
+    - Pre-evaluates ore veins before mining. Automatically bypasses submerged/underwater ores (preventing drowning), lava/fire-adjacent blocks (preventing item incineration), mob camps (>=2 hostiles or <=12 HP), and overhead gravel/sand suffocation traps.
+12. **🕳️ Pro-Standard 2x1 Shaft Seam-Straddling (`src/coder/dsl.js`)**:
+    - Positions precisely on the center border seam (0.6m hitbox straddles Block A and Block B). Digs Block A while supported by Block B, checks for lava/drop hazards, then digs Block B to drop 1 level safely without ever falling into caverns.
+13. **🚇 Horizontal Strip Mining & Balanced Descent Depths (`src/coder/dsl.js`, `src/bot/autonomous_engine.js`)**:
+    - Sets default staircase mining depth to the optimal Iron layer (`Y=16`) instead of plunging to Bedrock (`Y=-54`). Dispatches straight 1x2 Strip Mining tunnels (18 blocks long) and Fishbone (Branch) mining at optimal depth.
+14. **🦘 Vanilla Auto-Jump Leap & Water Buoyancy Engine (`src/driver/plugin_wrappers.js`)**:
+    - Elevates `stepHeight` to `1.2` and applies forward leap velocity (`0.24`) with jump lock during Pathfinder movements to effortlessly scale 1-block steps without collision freezing. Holds continuous buoyancy jump while in water to prevent drowning.
 
 

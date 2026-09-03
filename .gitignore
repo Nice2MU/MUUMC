@@ -5,8 +5,9 @@ yarn-debug.log*
 yarn-error.log*
 
 # Logs
-logs/*.log
+logs/
 *.log
+*.log.*
 
 # Temporary and Cache files
 data/auth_cache/

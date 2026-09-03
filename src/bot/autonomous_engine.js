@@ -79,10 +79,10 @@ class AutonomousEngine {
       this._tick();
     }, 2000);
 
-    // Dedicated 3-Second Liveness & Anti-Stall Watchdog Heartbeat
+    // Dedicated 1-Second Liveness & Anti-Stall Watchdog Heartbeat
     this._watchdogInterval = setInterval(() => {
       this._runWatchdog();
-    }, 3000);
+    }, 1000);
   }
 
   stop() {
@@ -209,9 +209,9 @@ class AutonomousEngine {
       return;
     }
 
-    // 2. Proactive Anti-Sleep Kickstart (>6s inactivity when not busy)
+    // 2. Proactive Anti-Sleep Kickstart (>2s inactivity when not busy)
     const inactiveDuration = Date.now() - this._lastMeaningfulActionTime;
-    if (!this.isBusy && inactiveDuration > 6000) {
+    if (!this.isBusy && inactiveDuration > 2000) {
       logger.warn(`🚨 [Anti-Stall Watchdog] Bot idle for ${(inactiveDuration / 1000).toFixed(1)}s! Stimulating immediate action...`, 'AutonomousEngine');
       this._lastMeaningfulActionTime = Date.now();
       this._lastWatchdogMoveTime = Date.now();
@@ -244,9 +244,19 @@ class AutonomousEngine {
           await dsl.staircaseMineDown(Math.round(botPos.y) - 3);
         }
       } else {
-        // Surface: Chop tree or explore
-        logger.info('🚨 [Anti-Stall] Searching for trees or exploring terrain...', 'AutonomousEngine');
-        await dsl.chopTree({ count: 2 }).catch(() => {});
+        // Surface: Check inventory for wood
+        const woodItems = adapter.getInventoryItems().filter(i => i.name.includes('log') || i.name.includes('planks'));
+        const totalWood = woodItems.reduce((acc, i) => acc + i.count, 0);
+        if (totalWood >= 8) {
+          logger.info('🚨 [Anti-Stall] Bot has wood in inventory. Exploring surroundings...', 'AutonomousEngine');
+          await adapter.exploreTerrain(16).catch(() => {});
+        } else {
+          logger.info('🚨 [Anti-Stall] Searching for trees or exploring terrain...', 'AutonomousEngine');
+          const chopSuccess = await dsl.chopTree({ count: 2 }).catch(() => false);
+          if (!chopSuccess) {
+            await adapter.exploreTerrain(16).catch(() => {});
+          }
+        }
       }
     } catch (e) {
       logger.debug(`Anti-Stall kickstart note: ${e.message}`, 'AutonomousEngine');
@@ -321,11 +331,31 @@ class AutonomousEngine {
           return;
         }
 
+        // 2. Fire / Burning & Lava Reflex (ดับไฟด้วยถังน้ำ หรือวิ่งลงน้ำใกล้ที่สุด)
         const blockIn = adapter.getBlockAt(botPos);
-        if (blockIn && (blockIn.name === 'fire' || blockIn.name === 'lava' || blockIn.name === 'flowing_lava')) {
-          this._currentGoal = 'escaping_fire';
-          await this.dispatchGoalToAI('ดับไฟด้วยถังน้ำหรือวิ่งหนีออกจากลาวาไปยังพื้นที่ปลอดภัย');
-          if (signal.aborted) return;
+        const isOnFire = rawBot.entity?.isOnFire || (blockIn && (blockIn.name === 'fire' || blockIn.name === 'lava' || blockIn.name === 'flowing_lava'));
+        if (isOnFire) {
+          this._currentGoal = 'extinguishing_fire';
+          logger.warn('🔥 [Reflex] Bot is on fire! Seeking immediate water or bucket clutch...', 'AutonomousEngine');
+
+          // Option A: Water Bucket Clutch (place water at feet, extinguish, and scoop back)
+          if (adapter.hasItem('water_bucket')) {
+            logger.info('💧 [Reflex] Executing water bucket clutch to douse flames...', 'AutonomousEngine');
+            const clutched = await dsl.useWaterBucketClutch().catch(() => false);
+            if (clutched) return;
+          }
+
+          // Option B: Run into nearest water block within 16m
+          const nearbyWater = adapter.findBlocks({ matching: ['water', 'flowing_water'], maxDistance: 16, count: 1 });
+          if (nearbyWater.length > 0) {
+            logger.info(`🌊 [Reflex] Running to nearest water at (${nearbyWater[0].x}, ${nearbyWater[0].y}, ${nearbyWater[0].z}) to extinguish fire!`, 'AutonomousEngine');
+            await adapter.goto(nearbyWater[0].x, nearbyWater[0].y, nearbyWater[0].z, 1.0, 3500).catch(() => {});
+            return;
+          }
+
+          // Fallback: Sprint away from fire/lava source
+          logger.warn('🔥 [Reflex] No water bucket or water nearby. Sprinting away to open ground!', 'AutonomousEngine');
+          await adapter.moveAway(14);
           return;
         }
 
@@ -333,33 +363,42 @@ class AutonomousEngine {
           const hostiles = adapter.findHostiles(12);
           if (hostiles.length > 0) {
             this._currentGoal = 'fleeing_danger';
-            await this.dispatchGoalToAI(`เลือดเหลือน้อย (${adapter.getHealth()} HP) ให้วิ่งถอยหนีออกจากมอนสเตอร์ ${hostiles[0].name}`);
-            if (signal.aborted) return;
+            logger.warn(`🏃 [Reflex] Low HP (${adapter.getHealth()})! Executing native tactical retreat from ${hostiles[0].name}...`, 'AutonomousEngine');
+            await adapter.moveAway(16);
             return;
           }
         }
       }
 
       // =========================================================================
-      // ⚔️ MODE 2: ⚔️ Self-Defense & Combat
+      // ⚔️ MODE 2: ⚔️ Native Self-Defense, Agile Combat & Mob Group Evasion
       // =========================================================================
       if (this._cfg.self_defense !== false) {
         if (!this._unreachableHostiles) this._unreachableHostiles = new Map();
         const now = Date.now();
-        const hostiles = adapter.findHostiles(10).filter(e => {
+        const hostiles = adapter.findHostiles(12).filter(e => {
           return !this._unreachableHostiles.has(e.id) || this._unreachableHostiles.get(e.id) <= now;
         });
 
-        if (hostiles.length > 0) {
+        // 🛡️ Group Threat Evasion: If 2 or more hostiles are grouped nearby, retreat instead of suicidal trade!
+        if (hostiles.length >= 2) {
+          this._currentGoal = 'evading_mob_group';
+          logger.warn(`🛡️ [Reflex] Mob group detected (${hostiles.length} hostiles: ${hostiles.map(h => h.name).join(', ')})! Avoiding group combat and retreating...`, 'AutonomousEngine');
+          await adapter.moveAway(16);
+          return;
+        }
+
+        // Single Target Tactical Combat (Hit-and-Retreat)
+        if (hostiles.length === 1) {
           const targetEnemy = hostiles[0];
           this._currentGoal = 'defending_self';
           this.emitBanter('hostile_spotted');
-          await this.dispatchGoalToAI(`มีมอนสเตอร์ ${targetEnemy.name} อยู่ใกล้ ให้ถืออาวุธที่ดีที่สุดและเข้าโจมตีป้องกันตัว`);
-          // If after combat dispatch the enemy is still alive and far, cool down to prevent infinite loop
+          logger.info(`⚔️ [Reflex] Hostile '${targetEnemy.name}' detected at ${adapter.distanceTo(targetEnemy.position).toFixed(1)}m. Engaging with Hit-and-Retreat combat...`, 'AutonomousEngine');
+          await adapter.equipHighestAttackWeapon();
+          await adapter.attackEntity(targetEnemy);
           if (adapter.distanceTo(targetEnemy.position) > 4.5) {
-            this._unreachableHostiles.set(targetEnemy.id, Date.now() + 20000);
+            this._unreachableHostiles.set(targetEnemy.id, Date.now() + 15000);
           }
-          if (signal.aborted) return;
           return;
         }
       }
@@ -380,24 +419,20 @@ class AutonomousEngine {
         }
       }
 
-      if (this._cfg.auto_eat && adapter.getFood() < 16) {
-        const hasFood = adapter.getInventory().some(i => [
-          'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
-          'bread', 'apple', 'cooked_cod', 'cooked_salmon', 'baked_potato',
-          'beef', 'porkchop', 'mutton', 'chicken', 'sweet_berries'
-        ].includes(i.name));
-
-        if (hasFood) {
-          this._currentGoal = 'eating';
-          await this.dispatchGoalToAI('กินอาหารที่มีในตัวเพื่อฟื้นฟูค่าความหิว');
-          if (signal.aborted) return;
-        } else if (!this._lastHuntAttempt || Date.now() - this._lastHuntAttempt > 25000) {
+      // 🍖 Native Auto-Eat Reflex (0 AI, Eats directly from inventory)
+      if (this._cfg.auto_eat && (adapter.getFood() < 16 || adapter.getHealth() < 16)) {
+        const ate = await adapter.eatFood().catch(() => false);
+        if (ate) {
+          logger.info(`🍖 [Reflex] Consumed food to restore hunger/HP (Food: ${adapter.getFood()}, HP: ${adapter.getHealth()})`, 'AutonomousEngine');
+          return;
+        } else if (!this._lastHuntAttempt || Date.now() - this._lastHuntAttempt > 30000) {
           const passives = adapter.findEntities({ type: 'passive', maxDistance: 16 });
           if (passives.length > 0) {
             this._currentGoal = 'hunting_for_food';
             this._lastHuntAttempt = Date.now();
             await this.dispatchGoalToAI(`ล่าสัตว์ ${passives[0].name} ใกล้ๆ เพื่อหาเนื้อมาทำอาหารฟื้นฟูความหิว`);
             if (signal.aborted) return;
+            return;
           }
         }
       }
@@ -411,27 +446,82 @@ class AutonomousEngine {
       }
 
       // =========================================================================
-      // 📦 MODE 4: 📦 Ground Loot Collection (Only for valuable ores/food/tools nearby)
+      // 📦 MODE 4: 📦 Native Ground Loot Collection (Focused & Low-Distraction)
       // =========================================================================
-      if (this._cfg.gather_drops && this._currentGoal !== 'returning_to_remembered_diamonds' && !this._currentGoal?.includes('mining')) {
+      if (this._cfg.gather_drops && this._currentGoal !== 'returning_to_remembered_diamonds' && !this._currentGoal?.includes('mining') && !this._currentGoal?.includes('chopping')) {
         if (rawBot && rawBot.inventory.emptySlotCount() === 0) {
           await adapter.cleanInventory();
         }
 
-        if (rawBot && rawBot.inventory.emptySlotCount() >= 4) {
+        if (rawBot && rawBot.inventory.emptySlotCount() >= 2) {
           const droppedItems = adapter.findDroppedItems(6);
           const accessibleDrop = droppedItems.find(d => !this._unreachableDrops.has(d.id) && !adapter.isTossedTrash(d));
 
-          if (accessibleDrop) {
+          // Always collect dropped ores/valuables, or normal drops if >= 2 items or close by
+          const isValuable = adapter.isValuableDrop(accessibleDrop);
+          if (accessibleDrop && (isValuable || droppedItems.length >= 2 || adapter.distanceTo(accessibleDrop.position) <= 3.5)) {
             this._dropAttempts[accessibleDrop.id] = (this._dropAttempts[accessibleDrop.id] || 0) + 1;
             if (this._dropAttempts[accessibleDrop.id] >= 2) {
               this._unreachableDrops.add(accessibleDrop.id);
-              logger.info(`📦 [Loot] Item ${accessibleDrop.id} uncollectible after 2 attempts. Bypassing...`, 'AutonomousEngine');
+              logger.info(`📦 [Loot] Item ${accessibleDrop.id} uncollectible. Bypassing...`, 'AutonomousEngine');
             } else {
               this._currentGoal = 'gathering_loot';
-              await this.dispatchGoalToAI('เดินไปเก็บไอเทมมีค่าที่ตกอยู่บนพื้นใกล้ๆ', 'collect_drops');
-              if (signal.aborted) return;
+              logger.info(`📦 [Reflex] Collecting ${droppedItems.length} dropped item(s) nearby natively (valuable: ${isValuable})...`, 'AutonomousEngine');
+              await dsl.collectDrops(isValuable ? 10 : 5).catch(() => {});
               return;
+            }
+          }
+        }
+      }
+
+      // =========================================================================
+      // 💎 MODE 4.5: 💎 Opportunistic Ore Harvesting Reflex (Mine on Sight!)
+      // =========================================================================
+      if (!this._currentGoal?.includes('emergency') && !this._currentGoal?.includes('hunting')) {
+        const hasDiamondPick = adapter.hasItem('diamond_pickaxe') || adapter.hasItem('netherite_pickaxe');
+        const hasIronPick = hasDiamondPick || adapter.hasItem('iron_pickaxe');
+        const hasStonePick = hasIronPick || adapter.hasItem('stone_pickaxe');
+        const hasWoodenPick = hasStonePick || adapter.hasItem('wooden_pickaxe');
+
+        // Safety gate: Never mine opportunistic ores if submerged in water, low oxygen, or low HP!
+        const isSubmerged = rawBot?.entity?.isInWater || (rawBot?.oxygenLevel !== undefined && rawBot.oxygenLevel < 18);
+        const isLowHp = (rawBot?.health || 20) <= 10;
+
+        if (hasWoodenPick && !isSubmerged && !isLowHp && rawBot && rawBot.inventory.emptySlotCount() >= 1) {
+          const exposedOres = dsl.findNearbyExposedOres(12).filter(bPos => dsl.isOreSafeToHarvest(bPos));
+          if (exposedOres.length > 0) {
+            // Prioritize: Diamond > Ancient Debris > Iron > Gold > Coal > Lapis > Redstone > Copper
+            const orePriority = (name) => {
+              if (name.includes('diamond')) return 100;
+              if (name.includes('ancient_debris')) return 90;
+              if (name.includes('iron')) return 80;
+              if (name.includes('gold')) return 70;
+              if (name.includes('coal')) return 60;
+              if (name.includes('lapis')) return 50;
+              if (name.includes('redstone')) return 40;
+              if (name.includes('copper')) return 30;
+              return 10;
+            };
+
+            exposedOres.sort((a, b) => {
+              const bA = adapter.getBlockAt(a);
+              const bB = adapter.getBlockAt(b);
+              const pA = bA ? orePriority(bA.name) : 0;
+              const pB = bB ? orePriority(bB.name) : 0;
+              if (pA !== pB) return pB - pA;
+              return adapter.distanceTo(a) - adapter.distanceTo(b);
+            });
+
+            const bestOrePos = exposedOres[0];
+            const bestOreBlock = adapter.getBlockAt(bestOrePos);
+            if (bestOreBlock) {
+              this._currentGoal = 'harvesting_opportunistic_ore';
+              logger.info(`💎 [Ore Reflex] Spotted harvestable ore '${bestOreBlock.name}' at (${bestOrePos.x}, ${bestOrePos.y}, ${bestOrePos.z})! Harvesting vein immediately...`, 'AutonomousEngine');
+              const mined = await dsl.mineConnectedVein(bestOrePos, [bestOreBlock.name, `deepslate_${bestOreBlock.name.replace('deepslate_', '')}`]);
+              if (mined > 0) {
+                await dsl.collectNearbyDrops(8);
+                return;
+              }
             }
           }
         }
@@ -700,14 +790,14 @@ class AutonomousEngine {
         }
       }
 
-      if (totalLogs > 0 && totalPlanks < 4) {
+      if (totalLogs > 0 && totalPlanks === 0) {
         this._currentGoal = 'crafting_planks';
         await this.dispatchGoalToAI('นำไม้ท่อนในตัวมาคราฟต์เป็นไม้แปรรูป Planks');
         if (signal.aborted) return;
         return;
       }
 
-      if (hasWoodPrerequisites && stickCount < 4 && totalPlanks >= 2) {
+      if (hasWoodPrerequisites && stickCount === 0 && totalPlanks >= 2) {
         this._currentGoal = 'crafting_sticks';
         await this.dispatchGoalToAI('คราฟต์ไม้แท่ง Stick ตุนไว้สำหรับทำอุปกรณ์');
         if (signal.aborted) return;
@@ -919,8 +1009,13 @@ class AutonomousEngine {
           if (signal.aborted) return;
           return;
         } else {
-          this._currentGoal = 'branch_mining_iron';
-          await this.dispatchGoalToAI('ขุดเหมืองแบบก้างปลา Fishbone Mining ที่ระดับ Y=16 เพื่อค้นหาแร่เหล็ก Iron Ore');
+          if (Math.random() < 0.6) {
+            this._currentGoal = 'strip_mining_iron';
+            await this.dispatchGoalToAI('ขุดอุโมงค์ทางตรง 1x2 Strip Mining ที่ระดับ Y=16 เพื่อค้นหาแร่เหล็ก Iron Ore');
+          } else {
+            this._currentGoal = 'branch_mining_iron';
+            await this.dispatchGoalToAI('ขุดเหมืองแบบก้างปลา Fishbone Mining ที่ระดับ Y=16 เพื่อค้นหาแร่เหล็ก Iron Ore');
+          }
           if (signal.aborted) return;
           return;
         }

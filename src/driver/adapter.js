@@ -597,10 +597,16 @@ class DriverAdapter {
   }
 
   async eatFood() {
+    if (!this.bot || !this.bot.inventory) return false;
     const foodItem = this.bot.inventory.items().find(i => this.resolver.isFood(i));
-    if (!foodItem) throw new Error('No edible food found in inventory.');
-    await this.bot.equip(foodItem, 'hand');
-    await this.bot.consume();
+    if (!foodItem) return false;
+    try {
+      await this.bot.equip(foodItem, 'hand');
+      await this.bot.consume();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   isTossedTrash(entity) {
@@ -743,18 +749,30 @@ class DriverAdapter {
       await this.digBlock(ceilingBlock2).catch(() => {});
     }
 
-    // 4. Find nearest surface air block or shoreline
-    const airBlocks = this.findBlocks({ matching: 'air', maxDistance: 16, count: 5 });
-    const surfaceAir = airBlocks.find(p => p.y >= botPos.y);
-    if (surfaceAir) {
-      await this.goto(surfaceAir.x, surfaceAir.y, surfaceAir.z, 1.0, 3000).catch(() => {});
+    // 4. Find nearest dry shoreline to step out of water onto land
+    const shores = this.findBlocks({
+      matching: ['grass_block', 'dirt', 'sand', 'gravel', 'stone', 'cobblestone', 'podzol', 'oak_planks'],
+      maxDistance: 24,
+      count: 10
+    });
+    const dryShore = shores.find(p => {
+      const above = this.getBlockAt(p.offset(0, 1, 0));
+      return above && (above.name === 'air' || above.name === 'short_grass');
+    });
+    if (dryShore) {
+      await this.goto(dryShore.x, dryShore.y + 1, dryShore.z, 1.2, 4000).catch(() => {});
+    } else {
+      // Swim forward and up to breach water edge
+      this.bot.setControlState('forward', true);
+      this.bot.setControlState('jump', true);
+      await new Promise(r => setTimeout(r, 1200));
+      this.bot.setControlState('forward', false);
     }
 
-    // 5. Release jump once breathing safely
-    const freshHead = this.getBlockAt(new Vec3(Math.floor(this.getPosition().x), Math.floor(this.getPosition().y + 1.6), Math.floor(this.getPosition().z)));
-    if (freshHead && (freshHead.name === 'air' || freshHead.name === 'cave_air')) {
+    // 5. Release jump once completely out of water on dry land
+    if (!this.bot.entity.isInWater) {
       this.bot.setControlState('jump', false);
-      logger.info('🫧 Safely reached air pocket and breathing.', 'DriverAdapter');
+      logger.info('🫧 Safely reached dry land and breathing.', 'DriverAdapter');
     }
     return true;
   }
@@ -894,15 +912,102 @@ class DriverAdapter {
     ).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
   }
 
-  async attackEntity(entity) {
-    if (!entity) return;
+  async fightCreeper(creeper) {
+    if (!creeper || !creeper.isValid) return;
     await this.equipHighestAttackWeapon();
-    if (this.bot._pvpLoaded && this.bot.pvp) {
-      await this.bot.pvp.attack(entity);
-    } else {
-      await this.lookAt(entity.position);
-      this.bot.attack(entity);
+
+    logger.info(`💥 [Creeper Tactics] Engaging Creeper with Hit-and-Run Sprint Evasion!`, 'DriverAdapter');
+
+    let hits = 0;
+    while (creeper.isValid && (creeper.health === undefined || creeper.health > 0) && hits < 8) {
+      // 1. Approach into strike reach (2.8m - 3.2m)
+      const currentDist = this.distanceTo(creeper.position);
+      if (currentDist > 3.2) {
+        const targetPos = creeper.position.offset(0, 1.2, 0);
+        await this.lookAt(targetPos);
+        this.bot.setControlState('forward', true);
+        this.bot.setControlState('sprint', true);
+        const approachTime = Math.min(1000, Math.max(150, Math.floor(currentDist * 80)));
+        await new Promise(r => setTimeout(r, approachTime));
+        this.bot.setControlState('forward', false);
+        this.bot.setControlState('sprint', false);
+      }
+
+      if (!creeper.isValid) break;
+
+      // 2. Deliver swift strike (deals knockback to push creeper away)
+      const headTarget = creeper.position.offset(0, 1.2, 0);
+      await this.lookAt(headTarget, true);
+      this.bot.attack(creeper);
+      hits++;
+
+      // 3. IMMEDIATELY SPRINT BACKWARDS OUT OF BLAST RADIUS (6-7m)!
+      // Running 6+ blocks away immediately cancels the Creeper's fuse and avoids explosions!
+      this.bot.setControlState('back', true);
+      this.bot.setControlState('sprint', true);
+      this.bot.setControlState('jump', true);
+
+      // Impart reverse momentum into physics
+      if (this.bot.entity && this.bot.entity.velocity) {
+        const yaw = this.bot.entity.yaw;
+        this.bot.entity.velocity.x += Math.sin(yaw) * 0.28;
+        this.bot.entity.velocity.z += Math.cos(yaw) * 0.28;
+      }
+
+      // Back off for 800ms (covers 6-7 blocks safety distance)
+      await new Promise(r => setTimeout(r, 800));
+      this.bot.clearControlStates();
+
+      // 4. Brief 300ms breather for creeper fuse to fully defuse and reset
+      await new Promise(r => setTimeout(r, 300));
     }
+    logger.info(`💥 [Creeper Tactics] Creeper neutralized successfully (${hits} hits).`, 'DriverAdapter');
+  }
+
+  async attackEntity(entity) {
+    if (!entity || !entity.isValid) return;
+
+    // Special Anti-Explosion Tactic for Creepers (Hit-and-Run Sprint Evasion)
+    if (entity.name === 'creeper') {
+      return await this.fightCreeper(entity);
+    }
+
+    await this.equipHighestAttackWeapon();
+
+    const targetPos = entity.position.offset(0, entity.height ? entity.height * 0.75 : 1.0, 0);
+    const dist = this.distanceTo(entity.position);
+
+    // 1. Approach into striking range if slightly far
+    if (dist > 3.2) {
+      await this.lookAt(targetPos);
+      this.bot.setControlState('forward', true);
+      this.bot.setControlState('sprint', true);
+      await new Promise(r => setTimeout(r, Math.min(280, Math.floor(dist * 75))));
+      this.bot.setControlState('forward', false);
+      this.bot.setControlState('sprint', false);
+    }
+
+    // 2. Aim and swing weapon
+    await this.lookAt(targetPos);
+    this.bot.attack(entity);
+
+    // 3. Dynamic Hit & Retreat: Sprint-jump backwards 6-7 blocks with reverse impulse
+    const strafeDir = Math.random() < 0.5 ? 'left' : 'right';
+    this.bot.setControlState('back', true);
+    this.bot.setControlState('sprint', true);
+    this.bot.setControlState('jump', true);
+    this.bot.setControlState(strafeDir, true);
+
+    // Physical reverse momentum impulse to ensure 6-7 full blocks of separation
+    if (this.bot.entity && this.bot.entity.velocity) {
+      const yaw = this.bot.entity.yaw;
+      this.bot.entity.velocity.x += Math.sin(yaw) * 0.28;
+      this.bot.entity.velocity.z += Math.cos(yaw) * 0.28;
+    }
+
+    // Retreat for 850ms to cleanly cover 6-7 blocks of safety distance
+    await new Promise(r => setTimeout(r, 850));
+    this.bot.clearControlStates();
   }
 
   findDroppedItems(maxDistance = 16) {
@@ -927,6 +1032,23 @@ class DriverAdapter {
       }
       return true;
     }).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
+  }
+
+  isValuableDrop(e) {
+    if (!e) return false;
+    if (e.getDroppedItem) {
+      try {
+        const item = e.getDroppedItem();
+        if (item && item.name) {
+          const n = item.name.toLowerCase();
+          return n.includes('raw_') || n.includes('diamond') || n.includes('gold') ||
+                 n.includes('iron') || n.includes('coal') || n.includes('lapis') ||
+                 n.includes('redstone') || n.includes('emerald') || n.includes('ancient_debris') ||
+                 n.includes('ingot');
+        }
+      } catch (_) {}
+    }
+    return false;
   }
 
   findVillagers(maxDistance = 16) {
@@ -954,6 +1076,15 @@ class DriverAdapter {
 
     const targetPos = pos.plus(escapeVec);
     return await this.goto(targetPos.x, targetPos.y, targetPos.z, 2.0, timeoutMs).catch(() => {});
+  }
+
+  async exploreTerrain(radius = 16, timeoutMs = 8000) {
+    const pos = this.getPosition();
+    const angle = Math.random() * Math.PI * 2;
+    const targetX = Math.round(pos.x + Math.sin(angle) * radius);
+    const targetZ = Math.round(pos.z + Math.cos(angle) * radius);
+    logger.info(`🗺️ [Explorer] Exploring terrain towards (${targetX}, ${targetZ}) [radius: ${radius}m]...`, 'DriverAdapter');
+    return await this.gotoXZ(targetX, targetZ, 2.5, timeoutMs).catch(() => false);
   }
 
   getNearestFreeSpace(size = 1, maxDistance = 8) {

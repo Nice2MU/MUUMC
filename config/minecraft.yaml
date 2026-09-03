@@ -28,7 +28,7 @@ auto_reconnect:
 
 autonomous:
   enabled: true
-  idle_timeout_ms: 3000
+  idle_timeout_ms: 2000
   explore_radius: 16
   gather_drops: true
   auto_eat: true
@@ -41,5 +41,3 @@ voice_bridge:
   auth_token: "muu_secure_voice_bridge_token_8899"
   auto_reconnect: true
   reconnect_delay_ms: 3000
-
-

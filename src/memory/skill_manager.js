@@ -135,12 +135,12 @@ class SkillManager {
 
     // 2. Mining / Harvesting Tasks
     if (isExplicitMining) {
-      if (desc.includes('โต๊ะคราฟต์') || desc.includes('crafting_table')) return { skill_name: 'recover_table', args: {} };
+      if (desc.includes('ตัดไม้') || desc.includes('ต้นไม้') || desc.includes('chop') || desc.includes('wood') || desc.includes('log')) return { skill_name: 'chop_tree', args: { count: 4 } };
+      if ((desc.includes('เก็บโต๊ะคราฟต์') || desc.includes('ขุดโต๊ะคราฟต์') || desc.includes('recover_table')) && !desc.includes('ตัดไม้')) return { skill_name: 'recover_table', args: {} };
       if (desc.includes('coal') || desc.includes('ถ่าน')) return { skill_name: 'mine_ore', args: { ore_type: 'coal', count: 4 } };
       if (desc.includes('iron') || desc.includes('เหล็ก')) return { skill_name: 'mine_ore', args: { ore_type: 'iron', count: 4 } };
       if (desc.includes('gold') || desc.includes('ทอง')) return { skill_name: 'mine_ore', args: { ore_type: 'gold', count: 2 } };
       if (desc.includes('diamond') || desc.includes('เพชร')) return { skill_name: 'mine_ore', args: { ore_type: 'diamond', count: 2 } };
-      if (desc.includes('wood') || desc.includes('log') || desc.includes('ไม้') || desc.includes('ตัดไม้')) return { skill_name: 'chop_tree', args: { count: 4 } };
       if (desc.includes('cobble') || desc.includes('stone') || desc.includes('หิน')) return { skill_name: 'mine_stone', args: { count: 6 } };
       return { skill_name: 'mine_stone', args: { count: 4 } };
     }

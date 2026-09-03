@@ -101,11 +101,11 @@ class PluginWrappers {
       }
 
       if (bot.physics) {
-        bot.physics.stepHeight = 0.6; // Vanilla safe step height (prevents server invalid_player_movement kick)
+        bot.physics.stepHeight = 1.2; // Native 1-block step-assist (seamlessly steps up 1-block dirt, grass, stone)
         bot.physics.yawSpeed = 12.0;
         bot.physics.pitchSpeed = 12.0;
       }
-      defaultMove.canDigits = true;
+      defaultMove.canDig = true;
       defaultMove.allowParkour = true;
       defaultMove.allow1by1towers = true;
 
@@ -126,12 +126,157 @@ class PluginWrappers {
       bot.pathfinder.setMovements(defaultMove);
       bot.pathfinder.thinkTimeout = 5000;
       bot.pathfinder.searchRadius = 64;
+      PluginWrappers.initAutoJumpAndCornerSlip(bot);
       logger.info('🏃 Optimized Pathfinder Movements initialized (Vanilla safe physics & rich scaffolding active).', 'PluginWrapper');
       return defaultMove;
     } catch (e) {
       logger.error(`Error initializing Movements: ${e.message}`, 'PluginWrapper');
       return null;
     }
+  }
+
+  static initAutoJumpAndCornerSlip(bot) {
+    if (bot._autoJumpEngineInstalled) return;
+    bot._autoJumpEngineInstalled = true;
+
+    // 1. Intercept setControlState to protect Auto-Jump leaps from pathfinder cancellation
+    const origSetControlState = bot.setControlState.bind(bot);
+    bot.setControlState = (control, state) => {
+      if ((control === 'jump' || control === 'forward') && !state && bot._autoJumpLeaping) {
+        // Suppress pathfinder cancelling jump or releasing forward key while leap is executing
+        return;
+      }
+      return origSetControlState(control, state);
+    };
+
+    let collidedTicks = 0;
+    let lastStrafeDir = 'right';
+
+    function triggerAutoJump() {
+      if (bot._autoJumpLeaping) return;
+      bot._autoJumpLeaping = true;
+      bot.jumpQueued = true;
+      origSetControlState('jump', true);
+      origSetControlState('forward', true);
+
+      // Impart forward horizontal momentum into physics engine so bot doesn't jump straight up and fall back down!
+      if (bot.entity && bot.entity.velocity) {
+        const yaw = bot.entity.yaw || 0;
+        bot.entity.velocity.x = -Math.sin(yaw) * 0.24;
+        bot.entity.velocity.z = -Math.cos(yaw) * 0.24;
+        if (bot.entity.onGround) {
+          bot.entity.velocity.y = 0.42;
+        }
+      }
+
+      setTimeout(() => {
+        bot._autoJumpLeaping = false;
+        if (bot.entity && !bot.entity.isInWater && !bot.entity.isInLava) {
+          origSetControlState('jump', false);
+        }
+      }, 300);
+    }
+
+    bot.on('physicsTick', () => {
+      if (!bot.entity || !bot.entity.position) return;
+
+      // 🏊 1. Continuous Water Buoyancy: Hold jump in water so bot always treads water and never sinks/drowns!
+      if (bot.entity.isInWater) {
+        origSetControlState('jump', true);
+      }
+
+      const isMoving = bot.controlState?.forward || (bot.pathfinder && bot.pathfinder.isMoving());
+      if (!isMoving) {
+        collidedTicks = 0;
+        return;
+      }
+
+      // Check for 1-block step in front (Vanilla Auto-Jump)
+      const yaw = bot.entity.yaw;
+      const dirX = -Math.sin(yaw);
+      const dirZ = -Math.cos(yaw);
+
+      // Raycast 0.65m in front at feet, waist (+1), head (+2), and ceiling
+      const frontFeetPos = bot.entity.position.offset(dirX * 0.65, 0, dirZ * 0.65);
+      const blockFeet = bot.blockAt(frontFeetPos);
+      const blockWaist = bot.blockAt(frontFeetPos.offset(0, 1, 0));
+      const blockHead = bot.blockAt(frontFeetPos.offset(0, 2, 0));
+      const blockCeiling = bot.blockAt(bot.entity.position.offset(0, 2.1, 0));
+
+      const isFeetSolid = blockFeet && blockFeet.boundingBox === 'block';
+      const isWaistClear = !blockWaist || blockWaist.boundingBox === 'empty' || blockWaist.name === 'air';
+      const isHeadClear = !blockHead || blockHead.boundingBox === 'empty' || blockHead.name === 'air';
+      const isCeilingClear = !blockCeiling || blockCeiling.boundingBox === 'empty' || blockCeiling.name === 'air';
+
+      // 🦘 1. PROACTIVE AUTO-JUMP: 1-block step in front with open headroom -> JUMP!
+      if (bot.entity.onGround && isFeetSolid && isWaistClear && isHeadClear && isCeilingClear) {
+        triggerAutoJump();
+        return;
+      }
+
+      // 🚧 2. COLLISION HANDLING (If bumping against wall, fence, or corner):
+      if (bot.entity.isCollidedHorizontally) {
+        collidedTicks++;
+
+        // If bumping against a 1-block obstacle that wasn't raycasted (e.g. diagonal step):
+        if (bot.entity.onGround && isWaistClear && isCeilingClear) {
+          triggerAutoJump();
+          return;
+        }
+
+        // Corner Glancing / Edge Slip: Obstacle is taller than 1 block (e.g. wall, tree, building corner)
+        if (collidedTicks >= 4 && collidedTicks % 4 === 0) {
+          // Check which side has more clearance: left or right
+          const leftPos = bot.entity.position.offset(-dirZ * 0.8, 0, dirX * 0.8);
+          const rightPos = bot.entity.position.offset(dirZ * 0.8, 0, -dirX * 0.8);
+          const blockLeft = bot.blockAt(leftPos);
+          const blockRight = bot.blockAt(rightPos);
+
+          const leftClear = !blockLeft || blockLeft.boundingBox === 'empty';
+          const rightClear = !blockRight || blockRight.boundingBox === 'empty';
+
+          if (leftClear && !rightClear) {
+            lastStrafeDir = 'left';
+          } else if (rightClear && !leftClear) {
+            lastStrafeDir = 'right';
+          } else {
+            lastStrafeDir = lastStrafeDir === 'left' ? 'right' : 'left';
+          }
+
+          origSetControlState(lastStrafeDir, true);
+
+          // Nudge yaw slightly (~25 degrees / 0.42 rad) to slide off the corner vertex
+          const glanceYaw = bot.entity.yaw + (lastStrafeDir === 'left' ? -0.42 : 0.42);
+          bot.look(glanceYaw, bot.entity.pitch, true).catch(() => {});
+          if (bot.entity && bot.entity.velocity) {
+            bot.entity.velocity.x += -Math.sin(glanceYaw) * 0.12;
+            bot.entity.velocity.z += -Math.cos(glanceYaw) * 0.12;
+          }
+
+          setTimeout(() => {
+            if (bot?.controlState) {
+              origSetControlState(lastStrafeDir, false);
+            }
+          }, 180);
+        }
+
+        // Deep Corner Hop Evasion (stuck for > 15 ticks / 0.75s)
+        if (collidedTicks >= 15) {
+          triggerAutoJump();
+          const escapeYaw = bot.entity.yaw + (Math.random() < 0.5 ? 0.85 : -0.85);
+          bot.look(escapeYaw, 0, true).catch(() => {});
+          collidedTicks = 0;
+        }
+      } else {
+        if (collidedTicks > 0) {
+          collidedTicks = 0;
+          origSetControlState('left', false);
+          origSetControlState('right', false);
+        }
+      }
+    });
+
+    logger.info('🦘 [Auto-Jump Engine] Vanilla Auto-Jump & Smart Corner Glancing active on physics ticks.', 'PluginWrapper');
   }
 }
 
