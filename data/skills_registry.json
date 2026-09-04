@@ -122,5 +122,86 @@
       "z": { "type": "number", "required": true }
     },
     "file": "mine_remembered_ore.js"
+  },
+  "explore_terrain": {
+    "name": "explore_terrain",
+    "description": "Wanders around the terrain within a given radius safely",
+    "category": "movement",
+    "parameters": {
+      "radius": { "type": "number", "default": 18 }
+    },
+    "file": "explore_terrain.js"
+  },
+  "branch_mine": {
+    "name": "branch_mine",
+    "description": "Fishbone / branch mining pattern at current level",
+    "category": "gathering",
+    "parameters": {
+      "length": { "type": "number", "default": 15 },
+      "spacing": { "type": "number", "default": 3 },
+      "branch_length": { "type": "number", "default": 6 }
+    },
+    "file": "branch_mine.js"
+  },
+  "explore_cave": {
+    "name": "explore_cave",
+    "description": "Explores nearby cave system, torches dark areas and collects exposed ores",
+    "category": "gathering",
+    "parameters": {
+      "max_steps": { "type": "number", "default": 25 },
+      "duration_sec": { "type": "number", "default": 60 }
+    },
+    "file": "explore_cave.js"
+  },
+  "shaft_mine": {
+    "name": "shaft_mine",
+    "description": "2x1 safe vertical shaft mining down to target Y level",
+    "category": "gathering",
+    "parameters": {
+      "target_y": { "type": "number", "default": 16 }
+    },
+    "file": "shaft_mine.js"
+  },
+  "strip_mine": {
+    "name": "strip_mine",
+    "description": "Mines a straight horizontal tunnel at current level",
+    "category": "gathering",
+    "parameters": {
+      "length": { "type": "number", "default": 18 }
+    },
+    "file": "strip_mine.js"
+  },
+  "recover_table": {
+    "name": "recover_table",
+    "description": "Finds nearby placed crafting table, breaks and recovers it to inventory",
+    "category": "gathering",
+    "parameters": {},
+    "file": "recover_table.js"
+  },
+  "hunt_animal": {
+    "name": "hunt_animal",
+    "description": "Hunts nearby passive animals (chicken, cow, pig, sheep) for food and drops",
+    "category": "survival",
+    "parameters": {
+      "animal_type": { "type": "string", "default": "chicken" },
+      "radius": { "type": "number", "default": 20 }
+    },
+    "file": "hunt_animal.js"
+  },
+  "navigate_landmark": {
+    "name": "navigate_landmark",
+    "description": "Navigates to a recorded landmark from spatial memory (e.g. SurfaceSpawn, MineEntrance, HomeBed, LastDeathPoint)",
+    "category": "movement",
+    "parameters": {
+      "landmark_name": { "type": "string", "default": "SurfaceSpawn" }
+    },
+    "file": "navigate_landmark.js"
+  },
+  "deposit_chest": {
+    "name": "deposit_chest",
+    "description": "Deposits surplus materials and junk into the nearest registered memory chest or nearby chest",
+    "category": "gathering",
+    "parameters": {},
+    "file": "deposit_chest.js"
   }
 }

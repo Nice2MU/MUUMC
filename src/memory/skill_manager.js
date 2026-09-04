@@ -285,11 +285,23 @@ class SkillManager {
       };
     }
 
-    // 13. Defend Area / Guard
-    if (desc.includes('defend') || desc.includes('คุ้มกัน') || desc.includes('ป้องกัน') || desc.includes('ดูแล')) {
+    // 14. Navigate to Landmark
+    if (desc.includes('landmark') || desc.includes('ไปที่จุด') || desc.includes('กลับบ้าน') || desc.includes('กลับจุดเกิด') || desc.includes('ไปจุดตาย') || desc.includes('ไปเหมือง')) {
+      let lmName = 'SurfaceSpawn';
+      if (desc.includes('จุดตาย') || desc.includes('death')) lmName = 'LastDeathPoint';
+      else if (desc.includes('บ้าน') || desc.includes('เตียง') || desc.includes('home') || desc.includes('bed')) lmName = 'HomeBed';
+      else if (desc.includes('เหมือง') || desc.includes('mine')) lmName = 'MineEntrance';
       return {
-        skill_name: 'defend_area',
-        args: { radius: 16 },
+        skill_name: 'navigate_landmark',
+        args: { landmark_name: lmName },
+      };
+    }
+
+    // 15. Deposit Surplus Items into Chest
+    if (desc.includes('เก็บของเข้าหีบ') || desc.includes('เก็บของใส่กล่อง') || desc.includes('deposit') || desc.includes('ใส่กล่อง') || desc.includes('ใส่หีบ')) {
+      return {
+        skill_name: 'deposit_chest',
+        args: {},
       };
     }
 

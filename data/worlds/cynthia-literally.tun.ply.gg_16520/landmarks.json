@@ -1,0 +1,42 @@
+{
+  "LiveTestBase": {
+    "name": "LiveTestBase",
+    "coords": {
+      "x": 50,
+      "y": 64,
+      "z": 100
+    },
+    "description": "ฐานทดสอบระบบ",
+    "updated_at": "2026-09-04T07:49:27.010Z"
+  },
+  "AuditBase": {
+    "name": "AuditBase",
+    "coords": {
+      "x": 100,
+      "y": 64,
+      "z": 200
+    },
+    "description": "ฐานตรวจสอบระบบ",
+    "updated_at": "2026-09-04T08:29:07.363Z"
+  },
+  "SurfaceSpawn": {
+    "name": "SurfaceSpawn",
+    "coords": {
+      "x": 0.5,
+      "y": 101,
+      "z": 0.5
+    },
+    "description": "",
+    "updated_at": "2026-09-04T09:12:24.053Z"
+  },
+  "MineEntrance": {
+    "name": "MineEntrance",
+    "coords": {
+      "x": -116.6,
+      "y": 67,
+      "z": 66.3
+    },
+    "description": "ทางลงเหมืองบันไดหลัก",
+    "updated_at": "2026-09-04T09:15:24.113Z"
+  }
+}

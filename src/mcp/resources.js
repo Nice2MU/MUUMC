@@ -26,6 +26,24 @@ const RESOURCE_DEFINITIONS = [
     description: 'Saved points of interest for the current world.',
     mimeType: 'application/json',
   },
+  {
+    uri: 'minecraft://chests',
+    name: 'Chests Inventory Registry',
+    description: 'Tracked storage chests and their contents for the current world.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'minecraft://diary',
+    name: 'Adventure Diary Entries',
+    description: 'Chronological adventure journal milestones.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'minecraft://player_profile',
+    name: 'Primary Player Profile',
+    description: 'Player profile and relationship memory with Muumiu.',
+    mimeType: 'application/json',
+  },
 ];
 
 class MCPResourceHandler {
@@ -65,6 +83,42 @@ class MCPResourceHandler {
               uri,
               mimeType: 'application/json',
               text: JSON.stringify(landmarks, null, 2),
+            },
+          ],
+        };
+      }
+      case 'minecraft://chests': {
+        const chests = worldMemory.getChests(serverKey);
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(chests, null, 2),
+            },
+          ],
+        };
+      }
+      case 'minecraft://diary': {
+        const diary = worldMemory.getDiary(serverKey);
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(diary, null, 2),
+            },
+          ],
+        };
+      }
+      case 'minecraft://player_profile': {
+        const profile = worldMemory.getPlayerProfile('nice2mu');
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(profile, null, 2),
             },
           ],
         };

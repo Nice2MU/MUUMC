@@ -16,12 +16,15 @@
 **`muu-mc`** is a standalone, production-grade MCP Server designed to connect Large Language Models (LLMs) to **Minecraft Java Edition**. It transforms any MCP-compatible AI Assistant (such as Claude Desktop, MuumiuLLM, Cursor, or custom agents) into a fully capable in-game companion that can navigate, mine, craft, build, defend, and explore autonomously.
 
 ### 🌟 Key Highlights
-- 🧠 **Dual-Agent Architecture**: High-level strategic reasoning and conversational dialog are separated from real-time JavaScript code generation and game physics.
-- 🛡️ **Hexagonal Driver Adapter (Zero-Breakage Guarantee)**: Complete decoupling layer between upstream Mineflayer APIs and the AI Coder. Upgrading Mineflayer or switching Minecraft versions never breaks your skill library.
+- 🧠 **Hierarchical Cognitive Architecture**: Genuine two-tier cognitive system pairing a **Fast-Path Reflex Layer (<50ms)** for instant physical survival (lava clutch, water tread, mob retreat, auto-eat) with a **Slow-Path Cognitive LLM Planner (3–5s)** for multi-turn strategic gameplay and reasoning.
+- 🦾 **Human Arm Reach (4.0m – 4.5m)**: True 3D eye-to-block Euclidean distance (`eyeDistanceTo`). Eliminates artificial 2-block reach limits: mines 1x2 tunnels up to 4 blocks deep (`depth = 4, 3, 2, 1`), digs staircases 2 steps down ahead, and places blocks from natural distance without block-hugging.
+- ⛏️ **Ore Mining Tool Tier Guard**: Dynamic tool requirement resolution via `minecraft-data`. Intercepts attempts to mine gold/diamond with wooden/stone pickaxes, enforcing strict tech progression (Wood ➔ Stone ➔ Iron ➔ Gold/Diamond/Obsidian).
+- 🦘 **Advanced Navigation & Physics Layer**: 3D A* pathfinding coupled with native Step-Assist (1.2m), Vanilla Auto-Jump (impulse raycast), Corner Glancing & Edge Slip (wall slide evasion), Continuous Water Buoyancy, and Smart Wander fallback.
+- 🛡️ **Hexagonal Driver Adapter (Zero-Breakage Guarantee)**: Decoupling layer between upstream Mineflayer APIs and the AI Coder. Upgrading Mineflayer or switching Minecraft versions never breaks your skill library.
 - ⚡ **Ultra-Fast Skill Cache (<0.1s)**: Repeated common tasks execute from parameterized skill cache in sub-100ms without consuming LLM tokens.
 - 🔒 **Universal Sandbox & 1-Shot Self-Healing**: Safe VM execution with auto-unwrap for Markdown and wrappers, 15s timeout guard, and automatic 1-shot runtime error repair.
-- 💾 **Two-Tier Atomic Memory**: Multi-world landmark tracking (`landmarks.json`) and chest inventories (`chests.json`) indexed by server IP/port with crash-proof atomic writes (`.tmp ➔ rename`).
-- 🤖 **Autonomous Proactive Engine**: Automatic hunger management, nighttime bed sleeping, sapling replanting, and social gaze with **0.01s Instant Preemption** when player commands arrive.
+- 💾 **Two-Tier Atomic Memory**: Multi-world landmark tracking (`landmarks.json`), chest inventories (`chests.json`), and adventure diary indexed by server IP/port with crash-proof atomic writes (`.tmp ➔ rename`).
+- 💬 **In-Game Chat Sanitization & Anti-Kick**: Sanitizes outgoing in-game text (removes newlines, caps at 250 chars) and provides silent DSL execution redirecting internal chatter to structured logs.
 - 🎙️ **Simple Voice Chat & Headless Companion Integration**: Real-time bi-directional voice chat bridge via `MuuVoiceBridge` (port 25570), physical action grounding, and support for the lightweight headless runner (`run_game.sh`).
 - 🌐 **Embedded 3D WebGL Viewer**: Live first-person and third-person orbital camera stream directly in your web browser (`http://127.0.0.1:3007`).
 
@@ -42,6 +45,11 @@ flowchart TB
     end
 
     subgraph SubsystemLayer["🤖 muu-mc Subsystem (assets/mcp/muu-mc)"]
+        subgraph CognitiveCore["🧠 Hierarchical Cognitive Engine"]
+            FastReflex["⚡ Fast-Path Reflex Layer (<50ms)<br/>- Lava Clutch / Water Tread<br/>- Mob Retreat / Auto-Eat<br/>- Preempts planner instantly"]
+            LLMPlanner["🧠 Slow-Path Cognitive LLM Planner (3-5s)<br/>- Perception Snapshot Synthesizer<br/>- Tech Progression (Tier Guard)<br/>- Strategic Continuity & Multi-turn Goals"]
+        end
+
         subgraph EmbeddedAgent2["🧑‍💻 Agent 2: Tactical AI Coder"]
             A2["🤖 AI Coder: qwen2.5-coder:3b (Ollama)<br/>num_ctx: 16K | temp: 0.2 | ~1.0s latency"]
             SkillCache["⚡ Skill Cache Matcher (<0.1s)"]
@@ -53,19 +61,24 @@ flowchart TB
         end
 
         subgraph BusinessLogic["🛡️ Safe DSL & Game Logic Layer"]
-            DSL["🛡️ Bulletproof Safe DSL Helpers<br/>- safeDigBlock (LOS & <= 2m Range)<br/>- safePlaceBlock (LOS Check)<br/>- chopTree / craftItem / defendPlayer<br/>- Hardcoded Silent Chat Redirection"]
-            Watchdog["👁️ Vanilla Mechanics Watchdog<br/>- Tool Durability Auto-Switch (<10%)<br/>- 36-Slot Inventory Overflow Protection<br/>- Crafting Table Deploy & Pickup Lifecycle"]
+            DSL["🛡️ Bulletproof Safe DSL Helpers<br/>- safeDigBlock (eyeDistanceTo & 4.5m Reach)<br/>- safePlaceBlock (3.2m - 4.0m Placement)<br/>- branchMine / stripMine (4-Block Lookahead)<br/>- Harvest Tier & Durability Guards"]
+            Watchdog["👁️ Vanilla Mechanics Watchdog<br/>- Tool Durability Auto-Switch (<10%)<br/>- Ore Harvest Tier Enforcement<br/>- 36-Slot Inventory Overflow Protection<br/>- Crafting Table Deploy & Pickup Lifecycle"]
             DSL --- Watchdog
         end
 
-        subgraph AdapterLayer["🔌 Hexagonal Driver Adapter (Firewall)"]
-            Adapter["🎮 Driver Adapter (src/driver/adapter.js)<br/>Normalized Bot API"]
+        subgraph AdapterLayer["🔌 Hexagonal Driver Adapter & Physics Layer"]
+            Adapter["🎮 Driver Adapter (src/driver/adapter.js)<br/>Normalized Bot API & eyeDistanceTo"]
+            Physics["🦘 Custom Physics Engine<br/>- Auto-Jump Impulse Raycaster<br/>- Corner Glancing & Edge Slip<br/>- Water Buoyancy on physicsTick"]
             Wrappers["📦 Plugin Wrappers (Pathfinder, PvP, Viewer)"]
+            Adapter --- Physics
             Adapter --- Wrappers
         end
 
+        MCPServer <--> CognitiveCore
         MCPServer <--> EmbeddedAgent2
         MCPServer <--> BusinessLogic
+        CognitiveCore --> FastReflex
+        CognitiveCore --> LLMPlanner
         Sandbox --> DSL
         DSL --> Adapter
     end
@@ -82,8 +95,8 @@ flowchart TB
 | **1. Driver Adapter Firewall** | Mineflayer version updates break bot code | [`src/driver/adapter.js`](src/driver/adapter.js) wraps and normalizes all Mineflayer calls. AI never sees the raw bot object. |
 | **2. AI Sandboxing & Auto-Unwrap** | LLM outputs markdown fences or bad wrappers | [`src/coder/sandbox.js`](src/coder/sandbox.js) cleans markdown, unwraps `async function task(...)`, and executes in an isolated scope. |
 | **3. Capped Context Window (16K)** | High latency and VRAM exhaustion | Capped at 16K (`num_ctx: 16384`) on `qwen2.5-coder:3b`, consuming ~4.0 GB VRAM with **0.8s – 1.5s** generation speed. |
-| **4. Distance <= 2m & Line-of-Sight** | Bot fails digging/placing due to Out-of-Range errors | [`src/coder/dsl.js`](src/coder/dsl.js) automatically pathfinds to <= 2m and faces the target block before any dig/place action. |
-| **5. Silent Chat Redirection** | AI spamming in-game public chat | `dsl.chat()` is hardcoded to redirect to `logger.info` internally. Only explicit `muu_mc_chat_in_game` tool calls broadcast in-game. |
+| **4. Human Arm Reach (4.0m – 4.5m)** | Bot fails digging/placing due to artificial distance limits | [`src/driver/adapter.js`](src/driver/adapter.js) calculates true 3D Euclidean distance via `eyeDistanceTo(block)`. Digs tunnels up to 4 blocks deep and places blocks comfortably from 3.2m – 4.0m without crowding. |
+| **5. Ore Tool Tier Guard** | Punching rare ores (gold/diamond) with stone/hand dropping 0 items | [`src/driver/registry_resolver.js`](src/driver/registry_resolver.js) & [`src/driver/adapter.js`](src/driver/adapter.js) check required tool tiers before mining. Enforces Tech Progression (Wood ➔ Stone ➔ Iron ➔ Diamond). |
 | **6. Strict Stdio Stream Isolation** | Non-JSON log output crashing the MCP transport | `process.stdout.write` filter intercepts non-JSON strings and routes them to `stderr` and `logs/muu_mc.log`. |
 | **7. Step Timeout & 1-Shot Debugger** | Bot freezing or getting stuck | 15s execution timeout via `AbortController`. If an exception occurs, [`src/coder/debugger.js`](src/coder/debugger.js) repairs code in 1-Shot. |
 | **8. Two-Tier Atomic Memory** | Memory corruption on sudden disconnects | [`src/memory/world_memory.js`](src/memory/world_memory.js) writes to `.tmp` files before atomic renaming (`fs.renameSync`). |
@@ -231,7 +244,10 @@ assets/mcp/muu-mc/
     ├── test_phase1.js                   # Driver Adapter & DSL unit test
     ├── test_phase2.js                   # Sandbox & Live Ollama Coder test
     ├── test_phase3.js                   # Two-Tier Memory unit test
-    └── test_phase5.js                   # Autonomous Engine & Preemption test
+    ├── test_phase5.js                   # Autonomous Engine & Preemption test
+    ├── test_reach_distance.js           # 4.5m Human reach & eyeDistanceTo unit test
+    ├── test_ore_tier_guard.js           # Tool harvest requirements & tech progression test
+    └── test_tool_lifecycle.js           # Tool degradation & proactive crafting test
 ```
 
 ---

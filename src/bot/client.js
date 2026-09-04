@@ -11,6 +11,7 @@ const { SafeDSL } = require('../coder/dsl');
 const { AutonomousEngine } = require('./autonomous_engine');
 const { InGameChatCompanion } = require('./chat_companion');
 const { voiceBridgeClient } = require('../voice/voice_client');
+const { worldMemory } = require('../memory/world_memory');
 
 class MinecraftBotClient {
   constructor(customConfig = null) {
@@ -21,6 +22,7 @@ class MinecraftBotClient {
     this.watchdog = null;
     this.stateScanner = null;
     this.dsl = null;
+    this.worldMemory = worldMemory;
     this.autonomousEngine = new AutonomousEngine(this);
     this.chatCompanion = new InGameChatCompanion(this);
     this.isConnected = false;
@@ -81,6 +83,7 @@ class MinecraftBotClient {
 
   _wireSubsystems() {
     this.adapter = new DriverAdapter(this.bot, this.resolver);
+    this.adapter.botClient = this;
     this.watchdog = new GameWatchdog(this.adapter, this.resolver);
     this.stateScanner = new GameStateScanner(this.adapter, this.resolver, this.watchdog);
     this.dsl = new SafeDSL(this.adapter, this.resolver, this.watchdog);
@@ -124,12 +127,79 @@ class MinecraftBotClient {
         this.resolver.setVersion(this.bot.version);
         PluginWrappers.initMovements(this.bot, this.resolver.mcData);
       }
+
+      // Record SurfaceSpawn if spawning above ground
+      try {
+        const p = this.adapter ? this.adapter.getPosition() : null;
+        const serverKey = this.getServerIdentifier();
+        if (p && p.y >= 55 && this.worldMemory) {
+          const existing = this.worldMemory.getLandmarks(serverKey);
+          if (!existing['SurfaceSpawn']) {
+            this.worldMemory.saveLandmark(
+              serverKey,
+              'SurfaceSpawn',
+              { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, z: Math.round(p.z * 10) / 10 },
+              'จุดเกิดเริ่มต้นบนผิวดิน'
+            );
+            this.worldMemory.recordDiaryEvent(
+              serverKey,
+              'เข้าสู่โลกกว้าง',
+              `มูมิวเกิดที่จุด (${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}) พร้อมเริ่มต้นการผจญภัยแล้วค่า!`,
+              'happy'
+            );
+          }
+        }
+      } catch (err) {
+        logger.debug(`Error recording SurfaceSpawn: ${err.message}`, 'BotClient');
+      }
+
       this.autonomousEngine.start();
     });
 
     this.bot.on('death', () => {
-      logger.warn('💀 Bot died! Waiting for respawn...', 'BotClient');
+      logger.warn('💀 Bot died! Recording coordinates and initiating respawn...', 'BotClient');
       this.adapter.stopMovement();
+      this.autonomousEngine.preempt();
+
+      try {
+        const deathPos = this.adapter.getPosition();
+        const serverKey = this.getServerIdentifier();
+        if (worldMemory && deathPos) {
+          worldMemory.saveLandmark(
+            serverKey,
+            'LastDeathPoint',
+            { x: Math.round(deathPos.x), y: Math.round(deathPos.y), z: Math.round(deathPos.z) },
+            'พิกัดจุดตายล่าสุด เพื่อกลับไปเก็บของ'
+          );
+          worldMemory.recordDiaryEvent(
+            serverKey,
+            'อุบัติเหตุที่ไม่คาดฝัน',
+            `มูมิวพลาดท่าเสียชีวิตที่ (${Math.round(deathPos.x)}, ${Math.round(deathPos.y)}, ${Math.round(deathPos.z)}) กำลังรีสปอว์นกลับไปเอาของคืน!`,
+            'surprised'
+          );
+          logger.warn(`📍 Saved LastDeathPoint at (${Math.round(deathPos.x)}, ${Math.round(deathPos.y)}, ${Math.round(deathPos.z)})`, 'BotClient');
+        }
+      } catch (err) {
+        logger.debug(`Error saving death point: ${err.message}`, 'BotClient');
+      }
+
+      setTimeout(() => {
+        if (this.bot && typeof this.bot.respawn === 'function') {
+          try {
+            this.bot.respawn();
+            logger.info('🔄 Dispatched respawn packet to server.', 'BotClient');
+          } catch (_) {}
+        }
+      }, 1500);
+    });
+
+    this.bot.on('respawn', () => {
+      logger.info('🌍 Bot respawned into the world!', 'BotClient');
+      if (this.bot.version) {
+        this.resolver.setVersion(this.bot.version);
+        PluginWrappers.initMovements(this.bot, this.resolver.mcData);
+      }
+      this.autonomousEngine.start();
     });
 
     this.bot.on('kicked', (reason) => {

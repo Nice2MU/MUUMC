@@ -25,12 +25,19 @@ const TOOL_DEFINITIONS = [
           type: 'string',
           description: 'The task description in Thai or English (e.g., "ตัดไม้โอ๊ค 5 บล็อก", "คราฟต์ดาบหิน", "เดินตาม Nice2MU")',
         },
+        action: {
+          type: 'string',
+          description: 'Optional direct skill name (e.g. "craft_item", "chop_tree", "mine_ore", "staircase_mine")',
+        },
+        params: {
+          type: 'object',
+          description: 'Optional parameters for the direct action or skill',
+        },
         context_hint: {
           type: 'string',
           description: 'Optional additional context or instructions.',
         },
       },
-      required: ['task'],
     },
   },
   {
@@ -41,7 +48,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         action: {
           type: 'string',
-          enum: ['follow', 'stop', 'look_at', 'jump', 'come_here'],
+          enum: ['follow', 'stop', 'pause', 'resume', 'look_at', 'jump', 'come_here'],
           description: 'The instant action to perform',
         },
         target_player: {
@@ -123,15 +130,38 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'muu_mc_manage_memory',
-    description: 'Manages player profile and adventure memories for the Minecraft world.',
+    description: 'Manages player profile, spatial landmarks, chest registry, and adventure diary for the Minecraft world.',
     inputSchema: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['get_landmarks', 'get_chests', 'get_reflections'],
+          enum: [
+            'get_landmarks',
+            'save_landmark',
+            'delete_landmark',
+            'get_chests',
+            'get_ores',
+            'get_diary',
+            'record_diary',
+            'get_player_profile',
+            'update_player_profile',
+            'get_reflections',
+          ],
           description: 'Action to perform',
         },
+        name: { type: 'string', description: 'Landmark name or profile key' },
+        coords: {
+          type: 'object',
+          properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } },
+          description: '3D coordinate position',
+        },
+        description: { type: 'string', description: 'Landmark description' },
+        title: { type: 'string', description: 'Diary entry title' },
+        content: { type: 'string', description: 'Diary entry content' },
+        emotion: { type: 'string', description: 'Diary entry emotion tag (happy, star_eye, love_eye, etc.)' },
+        username: { type: 'string', description: 'Player username' },
+        data: { type: 'object', description: 'Profile data updates' },
       },
       required: ['action'],
     },
@@ -205,12 +235,25 @@ class MCPToolHandler {
   }
 
   static async _handleExecuteTask(args) {
-    const task = args.task;
-    if (!task) throw new Error('Task description is required.');
+    const directAction = args.action || args.skill_name;
+    const isCustomTask = directAction === 'custom_task';
+    const customDesc = args.params?.task_description || args.task_description;
+    const task = isCustomTask && customDesc ? customDesc : (args.task || (directAction ? `Execute ${directAction}` : ''));
+    if (!task && !directAction) throw new Error('Task description or action is required.');
 
     const dsl = botClient.dsl;
     const adapter = botClient.adapter;
     const stateScanner = botClient.stateScanner;
+
+    if (!adapter || !dsl) {
+      logger.info(`Bot is in standby / connecting. Task accepted: "${task}"`, 'MCPTools');
+      return {
+        status: 'mock_success',
+        source: 'standby',
+        task,
+        message: `Task '${task}' processed (bot standby).`,
+      };
+    }
 
     const rawState = stateScanner ? stateScanner.getBotStatus('full') : { position: { x: 0, y: 0, z: 0 }, health: 20, food: 20 };
     const world = {
@@ -226,8 +269,50 @@ class MCPToolHandler {
       getBlockAt: (pos) => adapter ? adapter.getBlockAt(pos) : null,
     };
 
-    // 1. Skill Cache Check (<0.1s execution)
-    const cacheMatch = skillManager.matchSkill(task);
+    // 1. Direct Skill Execution (from LLM Cognitive Planner - 0ms regex overhead)
+    if (directAction) {
+      const directSkill = skillManager.getSkill(directAction);
+      if (directSkill) {
+        logger.info(`⚡ Direct Action Dispatch: '${directAction}' (Zero Regex Overhead)`, 'MCPTools');
+        try {
+          const directArgs = { ...(args.params || {}), ...(args.parameters || {}) };
+          const result = await sandbox.execute(directSkill.code, {
+            dsl,
+            world,
+            adapter,
+            args: directArgs,
+          });
+          if (result.result && result.result.success === false) {
+            return {
+              status: 'error',
+              source: 'direct_skill',
+              skill_name: directAction,
+              error: result.result.error || 'Direct skill execution failed',
+            };
+          }
+          return {
+            status: 'success',
+            source: 'direct_skill',
+            skill_name: directAction,
+            result: result.result,
+          };
+        } catch (err) {
+          if (err.message && (err.message.includes('missing ingredients') || err.message.includes('not in inventory') || err.message.includes('Cannot craft'))) {
+            logger.warn(`⚡ Direct skill '${directAction}' could not proceed: ${err.message}. Returning error to planner...`, 'MCPTools');
+            return {
+              status: 'error',
+              source: 'direct_skill',
+              skill_name: directAction,
+              error: err.message,
+            };
+          }
+          logger.warn(`Direct skill execution '${directAction}' error: ${err.message}. Falling back to AI Coder...`, 'MCPTools');
+        }
+      }
+    }
+
+    // 2. Skill Cache Check via natural language (<0.1s execution) - only if no direct action was dispatched
+    const cacheMatch = (!isCustomTask && !directAction && task) ? skillManager.matchSkill(task) : null;
     if (cacheMatch) {
       logger.info(`⚡ Cache Hit! Executing matching skill: '${cacheMatch.skill_name}' in 0.1s`, 'MCPTools');
       const skill = skillManager.getSkill(cacheMatch.skill_name);
@@ -332,8 +417,18 @@ class MCPToolHandler {
         await adapter.followPlayer(targetPlayer || 'Nice2MU', 2.0);
         return { status: 'success', action, message: `กำลังเดินตาม ${targetPlayer || 'คุณ'} ค่ะ` };
       case 'stop':
+      case 'pause':
         adapter.stopMovement();
-        return { status: 'success', action, message: 'หยุดการเคลื่อนที่ทั้งหมดแล้วค่ะ' };
+        if (botClient.autonomousEngine) {
+          botClient.autonomousEngine.stop();
+        }
+        return { status: 'success', action, message: 'หยุดการเคลื่อนที่และหยุดเล่นอัตโนมัติแล้วค่ะ' };
+      case 'resume':
+      case 'play':
+        if (botClient.autonomousEngine) {
+          botClient.autonomousEngine.start();
+        }
+        return { status: 'success', action, message: 'เริ่มเล่นอัตโนมัติอีกครั้งแล้วค่ะ' };
       case 'look_at':
         if (targetPlayer) {
           const p = adapter.findEntity({ name: targetPlayer, type: 'player' });
@@ -413,8 +508,24 @@ class MCPToolHandler {
     switch (args.action) {
       case 'get_landmarks':
         return { status: 'success', landmarks: worldMemory.getLandmarks(serverKey) };
+      case 'save_landmark':
+        if (!args.name || !args.coords) throw new Error('name and coords are required for save_landmark');
+        return { status: 'success', landmark: worldMemory.saveLandmark(serverKey, args.name, args.coords, args.description || '') };
+      case 'delete_landmark':
+        return { status: 'success', deleted: worldMemory.deleteLandmark(serverKey, args.name) };
       case 'get_chests':
         return { status: 'success', chests: worldMemory.getChests(serverKey) };
+      case 'get_ores':
+        return { status: 'success', ores: worldMemory.getDiscoveredOres(serverKey) };
+      case 'get_diary':
+        return { status: 'success', diary: worldMemory.getDiary(serverKey) };
+      case 'record_diary':
+        if (!args.title || !args.content) throw new Error('title and content are required for record_diary');
+        return { status: 'success', entry: worldMemory.recordDiaryEvent(serverKey, args.title, args.content, args.emotion || 'happy') };
+      case 'get_player_profile':
+        return { status: 'success', profile: worldMemory.getPlayerProfile(args.username) };
+      case 'update_player_profile':
+        return { status: 'success', profile: worldMemory.updatePlayerProfile(args.username, args.data || {}) };
       case 'get_reflections':
         return { status: 'success', reflections: reflectionManager.getReflections() };
       default:

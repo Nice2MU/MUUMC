@@ -43,14 +43,21 @@ class ConfigLoader {
       if (process.env.OPENROUTER_API_KEY) {
         this.aiprovider.openrouter.api_key = process.env.OPENROUTER_API_KEY;
       } else {
-        const parentConfigPath = path.resolve(__dirname, '../../../../config/aiprovider/aiprovider.yaml');
-        if (fs.existsSync(parentConfigPath)) {
-          try {
-            const parentYaml = yaml.parse(fs.readFileSync(parentConfigPath, 'utf8'));
-            if (parentYaml && parentYaml.openrouter && parentYaml.openrouter.api_key) {
-              this.aiprovider.openrouter.api_key = parentYaml.openrouter.api_key;
-            }
-          } catch (_) {}
+        const candidatePaths = [
+          path.resolve(__dirname, '../../../../../config/aiprovider/aiprovider.yaml'),
+          path.resolve(__dirname, '../../../../config/aiprovider/aiprovider.yaml'),
+          path.resolve(process.cwd(), 'config/aiprovider/aiprovider.yaml'),
+        ];
+        for (const parentConfigPath of candidatePaths) {
+          if (fs.existsSync(parentConfigPath)) {
+            try {
+              const parentYaml = yaml.parse(fs.readFileSync(parentConfigPath, 'utf8'));
+              if (parentYaml && parentYaml.openrouter && parentYaml.openrouter.api_key) {
+                this.aiprovider.openrouter.api_key = parentYaml.openrouter.api_key;
+                break;
+              }
+            } catch (_) {}
+          }
         }
       }
     }

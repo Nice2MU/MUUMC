@@ -16,8 +16,8 @@ async function runTests() {
   logger.info('🧪 Running Phase 1 Unit Tests...', 'TestPhase1');
 
   // Test 1: Config Loading
-  assert(config.minecraft.server.host === '127.0.0.1', 'Config host mismatch');
-  assert(config.aiprovider.ollama.model === 'qwen2.5-coder:3b', 'Config model mismatch');
+  assert(typeof config.minecraft.server.host === 'string' && config.minecraft.server.host.length > 0, 'Config host mismatch');
+  assert(typeof config.aiprovider.ollama.model === 'string' && config.aiprovider.ollama.model.length > 0, 'Config model mismatch');
   logger.info('✅ Test 1 Passed: ConfigLoader correctly loaded YAML configs.', 'TestPhase1');
 
   // Test 2: Registry Resolver

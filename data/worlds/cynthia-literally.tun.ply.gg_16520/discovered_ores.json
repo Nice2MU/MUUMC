@@ -1,0 +1,155 @@
+{
+  "-59_25_92": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -59,
+      "y": 25,
+      "z": 92
+    },
+    "discovered_at": "2026-09-04T08:36:24.405Z"
+  },
+  "-60_25_92": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -60,
+      "y": 25,
+      "z": 92
+    },
+    "discovered_at": "2026-09-04T08:36:24.405Z"
+  },
+  "-49_10_98": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -49,
+      "y": 10,
+      "z": 98
+    },
+    "discovered_at": "2026-09-04T08:51:52.132Z"
+  },
+  "-50_10_98": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -50,
+      "y": 10,
+      "z": 98
+    },
+    "discovered_at": "2026-09-04T08:52:48.148Z"
+  },
+  "-49_9_99": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -49,
+      "y": 9,
+      "z": 99
+    },
+    "discovered_at": "2026-09-04T08:53:12.161Z"
+  },
+  "-59_25_93": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -59,
+      "y": 25,
+      "z": 93
+    },
+    "discovered_at": "2026-09-04T08:54:19.570Z"
+  },
+  "-59_26_92": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -59,
+      "y": 26,
+      "z": 92
+    },
+    "discovered_at": "2026-09-04T08:54:19.570Z"
+  },
+  "-60_25_93": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -60,
+      "y": 25,
+      "z": 93
+    },
+    "discovered_at": "2026-09-04T08:54:19.571Z"
+  },
+  "-60_24_93": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -60,
+      "y": 24,
+      "z": 93
+    },
+    "discovered_at": "2026-09-04T08:54:19.571Z"
+  },
+  "-50_9_99": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -50,
+      "y": 9,
+      "z": 99
+    },
+    "discovered_at": "2026-09-04T08:54:58.501Z"
+  },
+  "-49_9_98": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -49,
+      "y": 9,
+      "z": 98
+    },
+    "discovered_at": "2026-09-04T08:55:24.502Z"
+  },
+  "-50_9_98": {
+    "name": "gold_ore",
+    "coords": {
+      "x": -50,
+      "y": 9,
+      "z": 98
+    },
+    "discovered_at": "2026-09-04T09:00:05.360Z"
+  },
+  "-2_-1_103": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": -2,
+      "y": -1,
+      "z": 103
+    },
+    "discovered_at": "2026-09-04T09:06:56.719Z"
+  },
+  "-3_-2_103": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": -3,
+      "y": -2,
+      "z": 103
+    },
+    "discovered_at": "2026-09-04T09:06:56.720Z"
+  },
+  "-3_-2_104": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": -3,
+      "y": -2,
+      "z": 104
+    },
+    "discovered_at": "2026-09-04T09:06:56.720Z"
+  },
+  "-2_-2_103": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": -2,
+      "y": -2,
+      "z": 103
+    },
+    "discovered_at": "2026-09-04T09:06:56.721Z"
+  },
+  "-2_-2_104": {
+    "name": "deepslate_diamond_ore",
+    "coords": {
+      "x": -2,
+      "y": -2,
+      "z": 104
+    },
+    "discovered_at": "2026-09-04T09:06:56.721Z"
+  }
+}

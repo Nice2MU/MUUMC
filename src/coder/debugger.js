@@ -25,7 +25,7 @@ class SelfHealingDebugger {
   /**
    * Attempts 1-Shot repair and re-execution of failed code.
    */
-  async repairAndExecute({ failedCode, error, taskDescription, worldState, dsl, args = {} }) {
+  async repairAndExecute({ failedCode, error, taskDescription, worldState, dsl, world = null, adapter = null, args = {} }) {
     logger.warn(`🔧 Initiating 1-Shot Self-Healing Debugger for error: "${error.message}" (${this.activeProvider})`, 'Debugger');
 
     const userDebugPrompt = `The previous JavaScript code failed with a runtime exception during execution in Minecraft.
@@ -98,7 +98,8 @@ Analyze the error reason and write ONLY the corrected executable Safe DSL JavaSc
 
       const executionResult = await sandbox.execute(repairedRawCode, {
         dsl,
-        world: worldState,
+        world: world || worldState,
+        adapter,
         args,
       });
 

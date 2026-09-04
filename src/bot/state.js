@@ -32,6 +32,7 @@ class GameStateScanner {
       is_raining: bot?.isRaining || false,
       time_of_day: bot?.time?.timeOfDay || 0,
       is_night: bot?.time?.isNight || false,
+      current_activity: this.getRealtimeActivity(),
     };
 
     if (detailLevel === 'inventory_only' || detailLevel === 'full') {

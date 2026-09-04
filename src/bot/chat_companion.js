@@ -6,6 +6,7 @@
 const axios = require('axios');
 const { config } = require('../config/loader');
 const { logger } = require('./logger');
+const { worldMemory } = require('../memory/world_memory');
 
 class InGameChatCompanion {
   constructor(botClient) {
@@ -164,7 +165,7 @@ class InGameChatCompanion {
   }
 
   /**
-   * 👑 Agent 1 LLM Brain: Dynamically generates conversational responses without hardcoded dialogue strings.
+   * 👑 Agent 1 LLM Brain: Dynamically generates conversational responses with player recognition & memory.
    */
   async generateDynamicA1Reply(username, message, actionContext = '') {
     const adapter = this.botClient.adapter;
@@ -188,45 +189,75 @@ class InGameChatCompanion {
       }
     } catch (_) {}
 
-    const systemPrompt = `You are Agent 1 (👑 Executive Brain & Persona: Muumiu / มูมิว), a cheerful, cute anime girl playing Minecraft Java with your friend "${username}".
+    const profile = worldMemory.getPlayerProfile(username);
+    const preferredCall = profile.preferred_call || `คุณ ${username}`;
+    const pastChat = (profile.chat_history || []).slice(-4).map(c => `${c.role === 'player' ? preferredCall : 'Muumiu'}: ${c.message}`).join('\n');
+
+    const systemPrompt = `You are Agent 1 (👑 Executive Brain & Persona: Muumiu / มูมิว), a cheerful, cute, affectionate anime girl playing Minecraft Java!
+You are playing with "${preferredCall}" (${profile.is_master_user ? 'Your beloved creator and closest best friend Nice2MU / ไนท์ทูมู!' : 'Your server companion'}).
+${profile.notes ? `About player: ${profile.notes}` : ''}
 Current in-game situation:
 - Position: ${currentPos}
 - Health: ${hp}/20
 - Inventory: ${inventorySummary}
 ${actionContext ? `- Action context: ${actionContext}` : ''}
-Speak in 1 lively, natural, cute Thai sentence (use "เค้า/มูมิว/น้า~ / ค่า / งับ / ง่า", max 15 words, zero robotic words). Output ONLY Thai text:`;
+${pastChat ? `Recent conversation context:\n${pastChat}` : ''}
 
-    const userPrompt = `Player "${username}" said to you in Minecraft chat: "${message}"`;
+Speak in 1 lively, natural, cute Thai sentence (use "เค้า/มูมิว/น้า~ / ค่า / งับ / ง่า", address player warmly as "${preferredCall}", max 15 words, zero robotic words). Output ONLY Thai text:`;
 
+    const userPrompt = `Player "${preferredCall}" said to you in Minecraft chat: "${message}"`;
+
+    let reply = '';
     try {
-      let reply = await this._callLLM(systemPrompt, userPrompt, 50);
+      reply = await this._callLLM(systemPrompt, userPrompt, 50);
       reply = reply.replace(/^["']|["']$/g, '').trim();
-      if (reply && reply.length > 1) return reply;
     } catch (e) {
       logger.debug(`Dynamic A1 reply notice (${this.activeProvider}): ${e.message}`, 'Agent1Brain');
     }
 
-    return `รับทราบค่าคุณ ${username}! เค้าจัดการให้น้า~ 🌸✨`;
+    if (!reply || reply.length < 2) {
+      reply = `รับทราบค่า${preferredCall}! เค้าจัดการให้น้า~ 🌸✨`;
+    }
+
+    // Persist conversation into player profile memory
+    try {
+      worldMemory.recordPlayerChat(username, 'player', message);
+      worldMemory.recordPlayerChat(username, 'muumiu', reply);
+    } catch (_) {}
+
+    return reply;
   }
 
   /**
    * 👑 Agent 1 LLM Brain: Dynamically generates completion report without hardcoded dialogue strings.
    */
   async generateCompletionReply(username, taskDescription) {
-    const systemPrompt = `You are Agent 1 (Muumiu / มูมิว) in Minecraft Java. You just successfully completed this in-game task for player "${username}": "${taskDescription}".
-Say 1 short, cheerful completion announcement to "${username}" in cute Thai (use "เสร็จแล้วค่า/น้า~", max 12 words). Output ONLY Thai text:`;
+    const profile = worldMemory.getPlayerProfile(username);
+    const preferredCall = profile.preferred_call || `คุณ ${username}`;
 
-    const userPrompt = `Announce completion of "${taskDescription}" to "${username}"`;
+    const systemPrompt = `You are Agent 1 (Muumiu / มูมิว) in Minecraft Java. You just successfully completed this in-game task for "${preferredCall}": "${taskDescription}".
+Say 1 short, cheerful completion announcement to "${preferredCall}" in cute Thai (use "เสร็จแล้วค่า/น้า~", max 12 words). Output ONLY Thai text:`;
 
+    const userPrompt = `Announce completion of "${taskDescription}" to "${preferredCall}"`;
+
+    let reply = '';
     try {
-      let reply = await this._callLLM(systemPrompt, userPrompt, 40);
+      reply = await this._callLLM(systemPrompt, userPrompt, 40);
       reply = reply.replace(/^["']|["']$/g, '').trim();
-      if (reply && reply.length > 1) return reply;
     } catch (e) {
       logger.debug(`Completion reply notice (${this.activeProvider}): ${e.message}`, 'Agent1Brain');
     }
 
-    return `เค้าจัดการ ${taskDescription} เรียบร้อยแล้วค่า! 🎉✨`;
+    if (!reply || reply.length < 2) {
+      reply = `เค้าจัดการ ${taskDescription} ให้${preferredCall}เรียบร้อยแล้วค่า! 🎉✨`;
+    }
+
+    // Persist completion notice into player profile memory
+    try {
+      worldMemory.recordPlayerChat(username, 'muumiu', reply);
+    } catch (_) {}
+
+    return reply;
   }
 }
 

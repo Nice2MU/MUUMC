@@ -1,0 +1,149 @@
+{
+  "-6_-1_96": {
+    "coords": {
+      "x": -6,
+      "y": -1,
+      "z": 96
+    },
+    "label": "Base Storage Chest",
+    "items": [
+      {
+        "name": "andesite",
+        "count": 16
+      },
+      {
+        "name": "furnace",
+        "count": 1
+      },
+      {
+        "name": "wooden_sword",
+        "count": 1
+      },
+      {
+        "name": "oak_log",
+        "count": 9
+      },
+      {
+        "name": "oak_planks",
+        "count": 2
+      },
+      {
+        "name": "leaf_litter",
+        "count": 32
+      },
+      {
+        "name": "gravel",
+        "count": 16
+      },
+      {
+        "name": "birch_log",
+        "count": 1
+      },
+      {
+        "name": "stone_axe",
+        "count": 1
+      },
+      {
+        "name": "stone_sword",
+        "count": 1
+      },
+      {
+        "name": "raw_copper",
+        "count": 64
+      },
+      {
+        "name": "coal",
+        "count": 40
+      },
+      {
+        "name": "raw_copper",
+        "count": 19
+      },
+      {
+        "name": "flint",
+        "count": 6
+      },
+      {
+        "name": "cobblestone",
+        "count": 64
+      },
+      {
+        "name": "cobblestone",
+        "count": 64
+      },
+      {
+        "name": "granite",
+        "count": 7
+      },
+      {
+        "name": "cobblestone",
+        "count": 64
+      },
+      {
+        "name": "smooth_basalt",
+        "count": 5
+      },
+      {
+        "name": "amethyst_block",
+        "count": 8
+      },
+      {
+        "name": "calcite",
+        "count": 8
+      },
+      {
+        "name": "cobblestone",
+        "count": 64
+      },
+      {
+        "name": "cobblestone",
+        "count": 60
+      },
+      {
+        "name": "diorite",
+        "count": 29
+      },
+      {
+        "name": "raw_iron",
+        "count": 8
+      },
+      {
+        "name": "cobblestone",
+        "count": 64
+      },
+      {
+        "name": "crafting_table",
+        "count": 2
+      },
+      {
+        "name": "stone_pickaxe",
+        "count": 1
+      },
+      {
+        "name": "dirt",
+        "count": 16
+      },
+      {
+        "name": "stick",
+        "count": 1
+      },
+      {
+        "name": "beef",
+        "count": 26
+      },
+      {
+        "name": "wooden_axe",
+        "count": 1
+      },
+      {
+        "name": "andesite",
+        "count": 64
+      },
+      {
+        "name": "wooden_sword",
+        "count": 1
+      }
+    ],
+    "updated_at": "2026-09-04T09:08:28.352Z"
+  }
+}

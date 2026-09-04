@@ -19,7 +19,7 @@ class UniversalSandbox {
    */
   unwrapCode(rawCode) {
     if (!rawCode || typeof rawCode !== 'string') return '';
-    let code = rawCode.trim();
+    let code = rawCode.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     // 1. Strip Markdown Code Blocks
     const mdMatch = code.match(/```(?:javascript|js)?\s*([\s\S]*?)```/i);

@@ -66,6 +66,15 @@ class DriverAdapter {
     return current.distanceTo(new Vec3(target.x, target.y, target.z));
   }
 
+  eyeDistanceTo(targetPos) {
+    if (!this.bot || !this.bot.entity) return Infinity;
+    if (!targetPos) return Infinity;
+    const target = targetPos.position || targetPos;
+    const eyePos = this.bot.entity.position.offset(0, 1.62, 0);
+    const targetCenter = new Vec3(target.x + 0.5, target.y + 0.5, target.z + 0.5);
+    return eyePos.distanceTo(targetCenter);
+  }
+
   // --- Movement & Navigation ---
 
   async goto(x, y, z, range = 1, timeoutMs = 12000) {
@@ -256,22 +265,44 @@ class DriverAdapter {
 
     this._isDigging = true;
     try {
-      // 1. Natural Arm Reach (Minecraft reach = 4.5m, comfortable standing distance = 2.4m - 3.5m)
-      const dist = this.distanceTo(blockPos);
-      if (dist > 3.8) {
-        await this.goto(blockPos.x, blockPos.y, blockPos.z, 2.8, 3000).catch(() => {});
+      // 1. Natural Arm Reach (Minecraft human survival reach = 4.5m, comfortable standing distance = 3.2m - 3.8m)
+      const dist = this.eyeDistanceTo(blockPos);
+      if (dist > 4.2) {
+        await this.goto(blockPos.x, blockPos.y, blockPos.z, 3.4, 3000).catch(() => {});
       }
 
       // 2. Stop pathfinder & velocity (Prevents in-air mining penalty & velocity cancellation)
       if (this.bot.pathfinder) {
         this.bot.pathfinder.stop();
       }
-      this.bot.clearControlStates();
+      if (typeof this.bot.clearControlStates === 'function') {
+        this.bot.clearControlStates();
+      }
       await new Promise(r => setTimeout(r, 40));
 
       // 3. Equip best tool and sync
       freshBlock = this.getBlockAt(blockPos);
       if (!freshBlock || !freshBlock.diggable || freshBlock.name === 'air' || freshBlock.name === 'cave_air') return;
+
+      const blockName = (freshBlock.name || '').toLowerCase();
+      const requiresPickaxe = blockName.includes('stone') || blockName.includes('ore') || blockName.includes('cobble') || blockName.includes('deepslate') || blockName.includes('granite') || blockName.includes('diorite') || blockName.includes('andesite') || blockName.includes('tuff') || blockName.includes('brick') || blockName.includes('furnace') || blockName.includes('terracotta') || blockName.includes('sandstone') || blockName.includes('obsidian');
+
+      if (requiresPickaxe && !this.hasPickaxe()) {
+        logger.warn(`🛑 [Tool Guard] Cannot mine '${freshBlock.name}' without a pickaxe! Punching stone with hands drops 0 items. Aborting dig.`, 'DriverAdapter');
+        throw new Error(`ToolDepleted: Cannot mine '${freshBlock.name}' without a pickaxe`);
+      }
+
+      // Check tool harvest requirements (Prevents mining gold/diamond/redstone with stone/wooden pickaxe)
+      const validTools = this.resolver ? this.resolver.getHarvestTools(freshBlock.name) : null;
+      if (validTools && validTools.length > 0) {
+        const eligibleTool = this.getEligibleHarvestTool(freshBlock);
+        if (!eligibleTool) {
+          const minTool = this.resolver ? this.resolver.getMinimumToolRequired(freshBlock.name) : 'iron_pickaxe';
+          logger.warn(`🛑 [Harvest Guard] Cannot harvest '${freshBlock.name}'! Requires at least '${minTool}'. Current tools cannot drop this ore (drops 0 items). Aborting dig.`, 'DriverAdapter');
+          throw new Error(`ToolTierInsufficient: Cannot harvest '${freshBlock.name}' without at least '${minTool}'`);
+        }
+      }
+
       await this.equipBestTool(freshBlock, true);
       await new Promise(r => setTimeout(r, 80));
 
@@ -308,7 +339,9 @@ class DriverAdapter {
       // 6. Post-dig Verification
       const checkAfter = this.getBlockAt(blockPos);
       if (checkAfter && checkAfter.name !== 'air' && checkAfter.name !== 'cave_air' && checkAfter.diggable && !checkAfter.name.includes('water') && !checkAfter.name.includes('lava')) {
-        this.bot.clearControlStates();
+        if (typeof this.bot.clearControlStates === 'function') {
+          this.bot.clearControlStates();
+        }
         await this.equipBestTool(checkAfter, true);
         await this.lookAt(targetCenter);
         try {
@@ -492,6 +525,60 @@ class DriverAdapter {
     await this.bot.equip(itemObj, destination);
   }
 
+  hasPickaxe(minTier = null) {
+    if (!this.bot || !this.bot.inventory) return false;
+    const tierRank = { netherite: 6, diamond: 5, iron: 4, stone: 3, golden: 2, wooden: 1 };
+    const requiredRank = minTier ? (tierRank[minTier.replace('_pickaxe', '')] || 1) : 1;
+    return this.bot.inventory.items().some(i => {
+      if (!i.name || !i.name.includes('pickaxe')) return false;
+      const tier = Object.keys(tierRank).find(t => i.name.includes(t)) || 'wooden';
+      return (tierRank[tier] || 1) >= requiredRank;
+    });
+  }
+
+  hasAxe() {
+    if (!this.bot || !this.bot.inventory) return false;
+    return this.bot.inventory.items().some(i => i.name && i.name.endsWith('_axe') && !i.name.includes('pickaxe'));
+  }
+
+  /**
+   * Checks if the bot possesses any tool in its inventory that can harvest this block and produce item drops.
+   * @param {object} block
+   * @returns {boolean}
+   */
+  canHarvestBlock(block) {
+    if (!block || !this.bot || !this.bot.inventory) return false;
+    const name = (block.name || '').toLowerCase();
+    const validTools = this.resolver ? this.resolver.getHarvestTools(name) : null;
+    if (!validTools || validTools.length === 0) return true; // Hand or any tool drops items
+
+    return this.bot.inventory.items().some(i => i.name && validTools.includes(i.name));
+  }
+
+  /**
+   * Gets the highest-tier tool from bot inventory that is eligible to harvest this block.
+   * Returns null if no eligible tool is available.
+   * @param {object} block
+   * @returns {object|null}
+   */
+  getEligibleHarvestTool(block) {
+    if (!block || !this.bot || !this.bot.inventory) return null;
+    const name = (block.name || '').toLowerCase();
+    const validTools = this.resolver ? this.resolver.getHarvestTools(name) : null;
+    if (!validTools || validTools.length === 0) return null;
+
+    const tierRank = { netherite: 6, diamond: 5, iron: 4, stone: 3, golden: 2, wooden: 1 };
+    const candidates = this.bot.inventory.items().filter(i => i.name && validTools.includes(i.name));
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => {
+      const tierA = Object.keys(tierRank).find(t => a.name.includes(t)) || 'wooden';
+      const tierB = Object.keys(tierRank).find(t => b.name.includes(t)) || 'wooden';
+      return (tierRank[tierB] || 1) - (tierRank[tierA] || 1);
+    });
+    return candidates[0];
+  }
+
   async equipBestTool(block, bypassDiggingLock = false) {
     if (!block || !this.bot || !this.bot.inventory) return;
     if (this._isDigging && !bypassDiggingLock) return; // Locked while digging!
@@ -509,14 +596,14 @@ class DriverAdapter {
     }
 
     if (preferredCategory === 'pickaxe') {
-      const isHighTier = name.includes('diamond') || name.includes('gold') || name.includes('redstone') || name.includes('emerald') || name.includes('obsidian') || name.includes('ancient_debris');
       const invItems = this.bot.inventory.items();
-      const pickaxes = invItems.filter(item => item.name.includes('pickaxe'));
+      const pickaxes = invItems.filter(item => item.name && item.name.includes('pickaxe'));
 
       if (pickaxes.length > 0) {
-        let chosenTool = null;
-        if (isHighTier) {
-          // For high-tier ores, equip highest tier available (Netherite > Diamond > Iron)
+        // Check if block requires specific harvest tool tier (e.g. gold_ore requires iron_pickaxe)
+        let chosenTool = this.getEligibleHarvestTool(block);
+        if (!chosenTool) {
+          // Standard block or building stone: sort by tier and choose best
           const tierRank = { netherite: 6, diamond: 5, iron: 4, stone: 3, golden: 2, wooden: 1 };
           pickaxes.sort((a, b) => {
             const tierA = Object.keys(tierRank).find(t => a.name.includes(t)) || 'wooden';
@@ -524,13 +611,6 @@ class DriverAdapter {
             return (tierRank[tierB] || 1) - (tierRank[tierA] || 1);
           });
           chosenTool = pickaxes[0];
-        } else {
-          const diamondPick = pickaxes.find(p => p.name === 'diamond_pickaxe');
-          const ironPick = pickaxes.find(p => p.name === 'iron_pickaxe');
-          const stonePick = pickaxes.find(p => p.name === 'stone_pickaxe');
-          const woodenPick = pickaxes.find(p => p.name === 'wooden_pickaxe');
-
-          chosenTool = diamondPick || ironPick || stonePick || woodenPick;
         }
 
         if (chosenTool) {
@@ -1078,13 +1158,32 @@ class DriverAdapter {
     return await this.goto(targetPos.x, targetPos.y, targetPos.z, 2.0, timeoutMs).catch(() => {});
   }
 
-  async exploreTerrain(radius = 16, timeoutMs = 8000) {
+  async exploreTerrain(radius = 18, timeoutMs = 8000) {
     const pos = this.getPosition();
-    const angle = Math.random() * Math.PI * 2;
-    const targetX = Math.round(pos.x + Math.sin(angle) * radius);
-    const targetZ = Math.round(pos.z + Math.cos(angle) * radius);
-    logger.info(`🗺️ [Explorer] Exploring terrain towards (${targetX}, ${targetZ}) [radius: ${radius}m]...`, 'DriverAdapter');
-    return await this.gotoXZ(targetX, targetZ, 2.5, timeoutMs).catch(() => false);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const targetX = Math.round(pos.x + Math.sin(angle) * radius);
+      const targetZ = Math.round(pos.z + Math.cos(angle) * radius);
+      logger.info(`🗺️ [Explorer] Exploring terrain towards (${targetX}, ${targetZ}) [radius: ${radius}m, attempt ${attempt + 1}/3]...`, 'DriverAdapter');
+      const reached = await this.gotoXZ(targetX, targetZ, 2.5, Math.min(timeoutMs, 5000)).catch(() => false);
+      if (reached) return true;
+      const current = this.getPosition();
+      const movedDist = Math.sqrt(Math.pow(current.x - pos.x, 2) + Math.pow(current.z - pos.z, 2));
+      if (movedDist >= 4.0) return true;
+    }
+    logger.info('🗺️ [Explorer] Target positions obstructed. Performing smooth directional wander...', 'DriverAdapter');
+    return await this.smartWander(3500);
+  }
+
+  async smartWander(durationMs = 3500) {
+    if (!this.bot || !this.bot.entity) return false;
+    const angle = (this.bot.entity.yaw || 0) + (Math.random() - 0.5) * Math.PI;
+    await this.bot.look(angle, 0, true).catch(() => {});
+    this.bot.setControlState('forward', true);
+    this.bot.setControlState('sprint', false);
+    await new Promise(r => setTimeout(r, durationMs));
+    this.bot.setControlState('forward', false);
+    return true;
   }
 
   getNearestFreeSpace(size = 1, maxDistance = 8) {
@@ -1116,14 +1215,28 @@ class DriverAdapter {
   // --- Chat & Communications ---
 
   chat(message) {
-    if (this.bot) {
-      this.bot.chat(message);
+    if (this.bot && message) {
+      const clean = String(message).replace(/[\r\n]+/g, ' ').trim();
+      if (!clean) return;
+      const safeMsg = clean.length > 250 ? clean.slice(0, 247) + '...' : clean;
+      try {
+        this.bot.chat(safeMsg);
+      } catch (err) {
+        logger.warn(`Failed to send chat: ${err.message}`, 'DriverAdapter');
+      }
     }
   }
 
   whisper(username, message) {
-    if (this.bot) {
-      this.bot.whisper(username, message);
+    if (this.bot && username && message) {
+      const clean = String(message).replace(/[\r\n]+/g, ' ').trim();
+      if (!clean) return;
+      const safeMsg = clean.length > 250 ? clean.slice(0, 247) + '...' : clean;
+      try {
+        this.bot.whisper(username, safeMsg);
+      } catch (err) {
+        logger.warn(`Failed to send whisper: ${err.message}`, 'DriverAdapter');
+      }
     }
   }
 }

@@ -7,6 +7,16 @@
       "z": -300.2
     },
     "description": "Main Base",
-    "updated_at": "2026-09-01T19:05:54.798Z"
+    "updated_at": "2026-09-04T09:22:40.412Z"
+  },
+  "MineEntrance": {
+    "name": "MineEntrance",
+    "coords": {
+      "x": 150,
+      "y": 64,
+      "z": -280
+    },
+    "description": "Main Staircase Mine",
+    "updated_at": "2026-09-04T09:22:40.416Z"
   }
 }
