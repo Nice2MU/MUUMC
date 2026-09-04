@@ -49,7 +49,7 @@ class GameStateScanner {
     return baseState;
   }
 
-  _scanNearbyBlocks(radius = 16) {
+  _scanNearbyBlocks(radius = 24, maxDistanceY = 6) {
     const interestingTypes = [
       'crafting_table',
       'chest',
@@ -67,7 +67,7 @@ class GameStateScanner {
 
     const results = {};
     for (const name of interestingTypes) {
-      const blocks = this.adapter.findBlocks({ matching: name, maxDistance: radius, count: 5 });
+      const blocks = this.adapter.findBlocks({ matching: name, maxDistance: radius, maxDistanceY, count: 5 });
       if (blocks.length > 0) {
         results[name] = blocks.map(b => ({ x: b.x, y: b.y, z: b.z }));
       }
@@ -75,16 +75,18 @@ class GameStateScanner {
     return results;
   }
 
-  _scanNearbyEntities(maxDistance = 24) {
+  _scanNearbyEntities(maxDistance = 16, maxDistanceY = 6) {
     if (!this.adapter.rawBot || !this.adapter.rawBot.entities) return [];
     const bot = this.adapter.rawBot;
+    const currentPos = this.adapter.getPosition();
     const entities = [];
 
     for (const id in bot.entities) {
       const e = bot.entities[id];
-      if (!e || e === bot.entity) continue;
+      if (!e || e === bot.entity || !e.position) continue;
       const dist = this.adapter.distanceTo(e.position);
-      if (dist <= maxDistance) {
+      const dy = Math.abs(e.position.y - currentPos.y);
+      if (dist <= maxDistance && dy <= maxDistanceY) {
         entities.push({
           id: e.id,
           name: e.name || e.username || 'unknown',

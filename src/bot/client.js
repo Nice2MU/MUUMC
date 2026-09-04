@@ -119,7 +119,7 @@ class MinecraftBotClient {
       logger.info('🌍 Bot spawned into the world.', 'BotClient');
       this.isSpawned = true;
       if (this.bot.physics) {
-        this.bot.physics.stepHeight = 1.0; // Step up 1-block heights smoothly like Vanilla Auto-Jump
+        this.bot.physics.stepHeight = 0.6; // Vanilla standard 0.6 (prevents server anti-cheat rubberband setbacks)
         this.bot.physics.yawSpeed = 12.0;
         this.bot.physics.pitchSpeed = 12.0;
       }
@@ -279,6 +279,7 @@ class MinecraftBotClient {
 
   _scheduleReconnect() {
     if (!this.config.auto_reconnect?.enabled) return;
+    if (this._reconnectTimer) return; // Already scheduled
     const maxRetries = this.config.auto_reconnect.max_retries || 10;
     const delay = this.config.auto_reconnect.retry_delay_ms || 5000;
 
@@ -290,8 +291,8 @@ class MinecraftBotClient {
     this.retryCount++;
     logger.info(`Scheduling reconnect attempt ${this.retryCount}/${maxRetries} in ${delay / 1000}s...`, 'BotClient');
 
-    if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
     this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
       this.connect();
     }, delay);
   }

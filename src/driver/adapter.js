@@ -77,38 +77,144 @@ class DriverAdapter {
 
   // --- Movement & Navigation ---
 
+  async unstuck(targetPos = null) {
+    this.stopMovement();
+    if (!this.bot || !this.bot.entity) return;
+
+    try {
+      const current = this.getPosition();
+      
+      // If a destination/target coordinate is provided, navigate and clear path directly towards it!
+      if (targetPos) {
+        const targetVec = targetPos.position || targetPos;
+        const dx = targetVec.x - current.x;
+        const dz = targetVec.z - current.z;
+        const dist = Math.hypot(dx, dz);
+
+        if (dist > 0.3) {
+          const targetYaw = Math.atan2(-dx, -dz);
+          await this.bot.look(targetYaw, 0, true).catch(() => {});
+
+          // Step 1: Proactive Forward Jump (Hop over 1-block steps, fences, snow, plants)
+          this.bot.setControlState('forward', true);
+          this.bot.setControlState('jump', true);
+          await new Promise(r => setTimeout(r, 380));
+          this.bot.clearControlStates();
+
+          const afterHopPos = this.getPosition();
+          const afterDist = Math.hypot(targetVec.x - afterHopPos.x, targetVec.z - afterHopPos.z);
+
+          // Step 2: Obstacle Clearance (Break blocks in the direct path if forward jump was blocked)
+          if (afterDist >= dist - 0.25) {
+            const fwdX = -Math.sin(targetYaw);
+            const fwdZ = -Math.cos(targetYaw);
+            const stepBlockPos = new Vec3(Math.floor(current.x + fwdX), Math.floor(current.y), Math.floor(current.z + fwdZ));
+            const headBlockPos = stepBlockPos.offset(0, 1, 0);
+
+            const headBlock = this.getBlockAt(headBlockPos);
+            const stepBlock = this.getBlockAt(stepBlockPos);
+
+            const isBreakable = (b) => b && !['air', 'cave_air', 'water', 'flowing_water', 'lava', 'flowing_lava', 'bedrock'].includes(b.name);
+
+            // Break head-level obstacle first (e.g. low leaves, vine, overhang)
+            if (isBreakable(headBlock)) {
+              logger.info(`⛏️ [Unstuck] Breaking head obstacle '${headBlock.name}' to clear path towards target...`, 'DriverAdapter');
+              await this.equipBestTool(headBlock, true).catch(() => {});
+              try {
+                await Promise.race([
+                  this.bot.dig(headBlock, true),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+                ]);
+              } catch (_) {}
+            }
+
+            // Break foot-level obstacle (e.g. 1-block dirt, leaves, root)
+            if (isBreakable(stepBlock)) {
+              logger.info(`⛏️ [Unstuck] Breaking foot obstacle '${stepBlock.name}' to clear path towards target...`, 'DriverAdapter');
+              await this.equipBestTool(stepBlock, true).catch(() => {});
+              try {
+                await Promise.race([
+                  this.bot.dig(stepBlock, true),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+                ]);
+              } catch (_) {}
+            }
+
+            // Step forward through the newly cleared opening
+            this.bot.setControlState('forward', true);
+            this.bot.setControlState('jump', true);
+            await new Promise(r => setTimeout(r, 450));
+            this.bot.clearControlStates();
+          }
+          return;
+        }
+      }
+
+      // Default fallback unstuck: Forward hop with slight diagonal adjustment
+      const yaw = this.bot.entity.yaw || 0;
+      const wiggleYaw = yaw + (Math.random() > 0.5 ? 0.4 : -0.4);
+      await this.bot.look(wiggleYaw, 0, true).catch(() => {});
+      this.bot.setControlState('forward', true);
+      this.bot.setControlState('jump', true);
+      await new Promise(r => setTimeout(r, 350));
+      this.bot.clearControlStates();
+    } catch (_) {}
+  }
+
   async goto(x, y, z, range = 1, timeoutMs = 12000) {
     if (!this.bot._pathfinderLoaded || !this.bot.pathfinder) {
       throw new Error('Pathfinder plugin is not available on this bot.');
     }
     const { GoalNear } = this.bot._goals;
     const goal = new GoalNear(x, y, z, range);
+    const targetVec = new Vec3(x, y, z);
 
     this.bot.clearControlStates();
+    this.bot.pathfinder.setGoal(null);
 
     return new Promise((resolve) => {
       let isDone = false;
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (!isDone) {
           isDone = true;
           this.stopMovement();
-          const dist = this.distanceTo(new Vec3(x, y, z));
-          resolve(dist <= range + 0.8);
+          const dist = this.distanceTo(targetVec);
+          let reached = dist <= range + 1.2;
+          logger.warn(`[Pathfinder] goto(${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}) timed out after ${timeoutMs}ms (dist: ${dist.toFixed(1)}m, reached: ${reached})`, 'DriverAdapter');
+          if (!reached) {
+            await this.unstuck(targetVec);
+            reached = this.distanceTo(targetVec) <= range + 1.2;
+          }
+          resolve(reached);
         }
       }, timeoutMs);
 
-      this.bot.pathfinder.goto(goal).then(() => {
+      this.bot.pathfinder.goto(goal).then(async () => {
         if (!isDone) {
           isDone = true;
           clearTimeout(timer);
-          resolve(true);
+          const dist = this.distanceTo(targetVec);
+          let reached = dist <= range + 1.2;
+          if (!reached) {
+            logger.warn(`[Pathfinder] goto resolved but distance ${dist.toFixed(1)}m > range ${range}m`, 'DriverAdapter');
+            await this.unstuck(targetVec);
+            reached = this.distanceTo(targetVec) <= range + 1.2;
+          }
+          resolve(reached);
         }
-      }).catch(() => {
+      }).catch(async (err) => {
         if (!isDone) {
           isDone = true;
           clearTimeout(timer);
-          const dist = this.distanceTo(new Vec3(x, y, z));
-          resolve(dist <= range + 0.8);
+          this.stopMovement();
+          const dist = this.distanceTo(targetVec);
+          let reached = dist <= range + 1.2;
+          logger.warn(`[Pathfinder] goto(${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}) rejected: ${err?.message || err} (dist: ${dist.toFixed(1)}m, reached: ${reached})`, 'DriverAdapter');
+          if (!reached) {
+            await this.unstuck(targetVec);
+            reached = this.distanceTo(targetVec) <= range + 1.2;
+          }
+          resolve(reached);
         }
       });
     });
@@ -120,37 +226,72 @@ class DriverAdapter {
     }
     const { GoalNearXZ } = this.bot._goals;
     const goal = new GoalNearXZ(x, z, range);
+    const targetVec = new Vec3(x, this.getPosition().y, z);
 
     this.bot.clearControlStates();
+    this.bot.pathfinder.setGoal(null);
 
     return new Promise((resolve) => {
       let isDone = false;
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (!isDone) {
           isDone = true;
           this.stopMovement();
           const current = this.getPosition();
           const dist2d = Math.sqrt(Math.pow(current.x - x, 2) + Math.pow(current.z - z, 2));
-          resolve(dist2d <= range + 0.8);
+          let reached = dist2d <= range + 1.2;
+          logger.warn(`[Pathfinder] gotoXZ(${x.toFixed(1)}, ${z.toFixed(1)}) timed out after ${timeoutMs}ms (dist2d: ${dist2d.toFixed(1)}m, reached: ${reached})`, 'DriverAdapter');
+          if (!reached) {
+            await this.unstuck(targetVec);
+            const afterPos = this.getPosition();
+            reached = Math.sqrt(Math.pow(afterPos.x - x, 2) + Math.pow(afterPos.z - z, 2)) <= range + 1.2;
+          }
+          resolve(reached);
         }
       }, timeoutMs);
 
-      this.bot.pathfinder.goto(goal).then(() => {
-        if (!isDone) {
-          isDone = true;
-          clearTimeout(timer);
-          resolve(true);
-        }
-      }).catch(() => {
+      this.bot.pathfinder.goto(goal).then(async () => {
         if (!isDone) {
           isDone = true;
           clearTimeout(timer);
           const current = this.getPosition();
           const dist2d = Math.sqrt(Math.pow(current.x - x, 2) + Math.pow(current.z - z, 2));
-          resolve(dist2d <= range + 0.8);
+          let reached = dist2d <= range + 1.2;
+          if (!reached) {
+            logger.warn(`[Pathfinder] gotoXZ resolved but distance ${dist2d.toFixed(1)}m > range ${range}m`, 'DriverAdapter');
+            await this.unstuck(targetVec);
+            const afterPos = this.getPosition();
+            reached = Math.sqrt(Math.pow(afterPos.x - x, 2) + Math.pow(afterPos.z - z, 2)) <= range + 1.2;
+          }
+          resolve(reached);
+        }
+      }).catch(async (err) => {
+        if (!isDone) {
+          isDone = true;
+          clearTimeout(timer);
+          this.stopMovement();
+          const current = this.getPosition();
+          const dist2d = Math.sqrt(Math.pow(current.x - x, 2) + Math.pow(current.z - z, 2));
+          let reached = dist2d <= range + 1.2;
+          logger.warn(`[Pathfinder] gotoXZ(${x.toFixed(1)}, ${z.toFixed(1)}) rejected: ${err?.message || err} (dist2d: ${dist2d.toFixed(1)}m, reached: ${reached})`, 'DriverAdapter');
+          if (!reached) {
+            await this.unstuck(targetVec);
+            const afterPos = this.getPosition();
+            reached = Math.sqrt(Math.pow(afterPos.x - x, 2) + Math.pow(afterPos.z - z, 2)) <= range + 1.2;
+          }
+          resolve(reached);
         }
       });
     });
+  }
+
+  async gotoEntity(entity, range = 2.2, timeoutMs = null) {
+    if (!entity || !entity.position) return false;
+    const currentDist = this.distanceTo(entity.position);
+    if (currentDist <= range + 0.5) return true;
+
+    const timeout = timeoutMs || Math.max(5000, Math.min(12000, Math.round(currentDist * 650)));
+    return await this.gotoXZ(entity.position.x, entity.position.z, range, timeout);
   }
 
   async followPlayer(username, range = 2) {
@@ -169,7 +310,6 @@ class DriverAdapter {
   stopMovement() {
     if (this.bot._pathfinderLoaded && this.bot.pathfinder) {
       this.bot.pathfinder.setGoal(null);
-      this.bot.pathfinder.stop();
     }
     if (this.bot._pvpLoaded && this.bot.pvp) {
       this.bot.pvp.stop();
@@ -219,7 +359,9 @@ class DriverAdapter {
     if (!this.bot) return [];
     const matching = options.matching;
     const maxDistance = options.maxDistance || 32;
+    const maxDistanceY = options.maxDistanceY !== undefined ? options.maxDistanceY : 6;
     const count = options.count || 1;
+    const currentPos = this.getPosition();
 
     let matchFn = matching;
     if (typeof matching === 'string') {
@@ -233,11 +375,22 @@ class DriverAdapter {
       matchFn = block => block && (cleanNames.includes(block.name) || ids.includes(block.type));
     }
 
-    return this.bot.findBlocks({
+    const blocks = this.bot.findBlocks({
       matching: matchFn,
       maxDistance,
-      count,
+      count: Math.min(100, Math.max(count * 5, 20)),
+      useExtraInfo: (block) => {
+        if (!block || !block.position) return true;
+        return Math.abs(block.position.y - currentPos.y) <= maxDistanceY;
+      },
     });
+
+    if (Array.isArray(blocks)) {
+      return blocks
+        .filter(b => b && Math.abs(b.y - currentPos.y) <= maxDistanceY)
+        .slice(0, count);
+    }
+    return [];
   }
 
   getBlockAt(pos) {
@@ -949,12 +1102,15 @@ class DriverAdapter {
 
   findEntity(options = {}) {
     const maxDistance = options.maxDistance || 16;
+    const maxDistanceY = options.maxDistanceY !== undefined ? options.maxDistanceY : 6;
     const type = options.type;
     const name = options.name;
+    const currentPos = this.getPosition();
 
     const entities = Object.values(this.bot.entities).filter(entity => {
-      if (!entity || entity === this.bot.entity) return false;
+      if (!entity || entity === this.bot.entity || !entity.position) return false;
       if (this.distanceTo(entity.position) > maxDistance) return false;
+      if (Math.abs(entity.position.y - currentPos.y) > maxDistanceY) return false;
       if (type && entity.type !== type) return false;
       if (name && entity.name !== name && entity.username !== name) return false;
       return true;
@@ -967,10 +1123,13 @@ class DriverAdapter {
   findEntities(filter = {}) {
     if (!this.bot || !this.bot.entities) return [];
     const maxDistance = filter.maxDistance || 16;
+    const maxDistanceY = filter.maxDistanceY !== undefined ? filter.maxDistanceY : 6;
     const type = filter.type;
+    const currentPos = this.getPosition();
     return Object.values(this.bot.entities).filter(e => {
       if (!e || e === this.bot.entity || !e.position) return false;
       if (this.distanceTo(e.position) > maxDistance) return false;
+      if (Math.abs(e.position.y - currentPos.y) > maxDistanceY) return false;
       if (type === 'passive' || type === 'animal') return this.isHuntable(e);
       if (type === 'hostile' || type === 'monster') return this.isHostile(e);
       if (type && e.type !== type) return false;
@@ -978,17 +1137,23 @@ class DriverAdapter {
     }).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
   }
 
-  findHostiles(maxDistance = 12) {
+  findHostiles(maxDistance = 10, maxDistanceY = 6) {
     if (!this.bot || !this.bot.entities) return [];
+    const currentPos = this.getPosition();
     return Object.values(this.bot.entities).filter(e =>
-      e && e !== this.bot.entity && this.isHostile(e) && this.distanceTo(e.position) <= maxDistance
+      e && e !== this.bot.entity && e.position && this.isHostile(e) &&
+      this.distanceTo(e.position) <= maxDistance &&
+      Math.abs(e.position.y - currentPos.y) <= maxDistanceY
     ).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
   }
 
-  findAnimals(maxDistance = 16) {
+  findAnimals(maxDistance = 16, maxDistanceY = 6) {
     if (!this.bot || !this.bot.entities) return [];
+    const currentPos = this.getPosition();
     return Object.values(this.bot.entities).filter(e =>
-      e && e !== this.bot.entity && this.isHuntable(e) && this.distanceTo(e.position) <= maxDistance
+      e && e !== this.bot.entity && e.position && this.isHuntable(e) &&
+      this.distanceTo(e.position) <= maxDistance &&
+      Math.abs(e.position.y - currentPos.y) <= maxDistanceY
     ).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
   }
 
@@ -1054,62 +1219,61 @@ class DriverAdapter {
 
     await this.equipHighestAttackWeapon();
 
-    const targetPos = entity.position.offset(0, entity.height ? entity.height * 0.75 : 1.0, 0);
-    const dist = this.distanceTo(entity.position);
+    const isPassive = this.isHuntable(entity) || !this.isHostile(entity);
+    let dist = this.distanceTo(entity.position);
 
-    // 1. Approach into striking range if slightly far
-    if (dist > 3.2) {
+    // 1. Approach into striking range if far (use gotoEntity for 2D surface navigation)
+    if (dist > 3.0) {
+      const targetRange = isPassive ? 2.2 : 2.8;
+      const approachTimeout = Math.max(5000, Math.min(10000, Math.round(dist * 600)));
+      await this.gotoEntity(entity, targetRange, approachTimeout).catch(() => {});
+      dist = this.distanceTo(entity.position);
+    }
+
+    // Proximity sprint-adjustment if still slightly out of range
+    if (dist > 3.4 && dist <= 6.0) {
+      const targetPos = entity.position.offset(0, entity.height ? entity.height * 0.75 : 1.0, 0);
       await this.lookAt(targetPos);
       this.bot.setControlState('forward', true);
       this.bot.setControlState('sprint', true);
-      await new Promise(r => setTimeout(r, Math.min(280, Math.floor(dist * 75))));
+      await new Promise(r => setTimeout(r, Math.min(300, Math.floor(dist * 70))));
       this.bot.setControlState('forward', false);
       this.bot.setControlState('sprint', false);
+      dist = this.distanceTo(entity.position);
     }
 
-    // 2. Aim and swing weapon
-    await this.lookAt(targetPos);
+    // STRICT CHECK: Never swing at thin air if entity is still beyond melee reach
+    if (dist > 3.8 || !entity.isValid) {
+      return;
+    }
+
+    // 2. Aim precisely at entity body and swing weapon
+    const targetPos = entity.position.offset(0, entity.height ? entity.height * 0.75 : 1.0, 0);
+    await this.lookAt(targetPos, true);
     this.bot.attack(entity);
 
-    // 3. Dynamic Hit & Retreat: Sprint-jump backwards 6-7 blocks with reverse impulse
-    const strafeDir = Math.random() < 0.5 ? 'left' : 'right';
-    this.bot.setControlState('back', true);
-    this.bot.setControlState('sprint', true);
-    this.bot.setControlState('jump', true);
-    this.bot.setControlState(strafeDir, true);
-
-    // Physical reverse momentum impulse to ensure 6-7 full blocks of separation
-    if (this.bot.entity && this.bot.entity.velocity) {
-      const yaw = this.bot.entity.yaw;
-      this.bot.entity.velocity.x += Math.sin(yaw) * 0.28;
-      this.bot.entity.velocity.z += Math.cos(yaw) * 0.28;
+    // 3. Post-Strike Spacing:
+    // - For PASSIVE ANIMALS: DO NOT jump backwards! (Passive mobs don't attack; jumping back loses them)
+    // - For HOSTILE MOBS: Gentle tactical micro-step (1-1.5 blocks, 200ms) for combat spacing
+    if (!isPassive) {
+      const strafeDir = Math.random() < 0.5 ? 'left' : 'right';
+      this.bot.setControlState('back', true);
+      this.bot.setControlState(strafeDir, true);
+      await new Promise(r => setTimeout(r, 200));
+      this.bot.clearControlStates();
     }
-
-    // Retreat for 850ms to cleanly cover 6-7 blocks of safety distance
-    await new Promise(r => setTimeout(r, 850));
-    this.bot.clearControlStates();
   }
 
-  findDroppedItems(maxDistance = 16) {
+  findDroppedItems(maxDistance = 6, maxDistanceY = 6) {
     if (!this.bot || !this.bot.entities) return [];
-    const junkNames = new Set([
-      'dirt', 'cobblestone', 'cobbled_deepslate', 'deepslate', 'stone', 'sand', 'gravel',
-      'diorite', 'granite', 'andesite', 'tuff', 'flint', 'leaf_litter', 'short_grass',
-      'wheat_seeds', 'oak_sapling', 'birch_sapling', 'spruce_sapling', 'rotten_flesh',
-      'poisonous_potato', 'wooden_pickaxe', 'wooden_axe', 'wooden_sword', 'stick'
-    ]);
+    const currentPos = this.getPosition();
 
     return Object.values(this.bot.entities).filter(e => {
       if (!e || !(e.name === 'item' || e.name === 'Item' || e.displayName === 'Item')) return false;
       if (!e.position || this.distanceTo(e.position) > maxDistance) return false;
+      if (Math.abs(e.position.y - currentPos.y) > maxDistanceY) return false;
       if (this._tossedTrashIds && this._tossedTrashIds.has(e.id)) return false;
 
-      if (e.getDroppedItem) {
-        try {
-          const item = e.getDroppedItem();
-          if (item && junkNames.has(item.name.toLowerCase())) return false;
-        } catch (_) {}
-      }
       return true;
     }).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
   }
@@ -1131,10 +1295,13 @@ class DriverAdapter {
     return false;
   }
 
-  findVillagers(maxDistance = 16) {
+  findVillagers(maxDistance = 16, maxDistanceY = 6) {
     if (!this.bot || !this.bot.entities) return [];
+    const currentPos = this.getPosition();
     return Object.values(this.bot.entities).filter(e =>
-      e && (e.name === 'villager' || e.displayName === 'Villager') && this.distanceTo(e.position) <= maxDistance
+      e && (e.name === 'villager' || e.displayName === 'Villager') && e.position &&
+      this.distanceTo(e.position) <= maxDistance &&
+      Math.abs(e.position.y - currentPos.y) <= maxDistanceY
     ).sort((a, b) => this.distanceTo(a.position) - this.distanceTo(b.position));
   }
 
@@ -1158,30 +1325,58 @@ class DriverAdapter {
     return await this.goto(targetPos.x, targetPos.y, targetPos.z, 2.0, timeoutMs).catch(() => {});
   }
 
-  async exploreTerrain(radius = 18, timeoutMs = 8000) {
+  async exploreTerrain(radius = 24, timeoutMs = 12000) {
     const pos = this.getPosition();
     for (let attempt = 0; attempt < 3; attempt++) {
       const angle = Math.random() * Math.PI * 2;
       const targetX = Math.round(pos.x + Math.sin(angle) * radius);
       const targetZ = Math.round(pos.z + Math.cos(angle) * radius);
       logger.info(`🗺️ [Explorer] Exploring terrain towards (${targetX}, ${targetZ}) [radius: ${radius}m, attempt ${attempt + 1}/3]...`, 'DriverAdapter');
-      const reached = await this.gotoXZ(targetX, targetZ, 2.5, Math.min(timeoutMs, 5000)).catch(() => false);
+      const reached = await this.gotoXZ(targetX, targetZ, 2.5, Math.min(timeoutMs, 8000)).catch(() => false);
       if (reached) return true;
       const current = this.getPosition();
       const movedDist = Math.sqrt(Math.pow(current.x - pos.x, 2) + Math.pow(current.z - pos.z, 2));
-      if (movedDist >= 4.0) return true;
+      if (movedDist >= Math.min(14.0, radius * 0.6)) return true;
     }
     logger.info('🗺️ [Explorer] Target positions obstructed. Performing smooth directional wander...', 'DriverAdapter');
-    return await this.smartWander(3500);
+    return await this.smartWander(5000);
   }
 
-  async smartWander(durationMs = 3500) {
+  async smartWander(durationMs = 5000) {
     if (!this.bot || !this.bot.entity) return false;
     const angle = (this.bot.entity.yaw || 0) + (Math.random() - 0.5) * Math.PI;
     await this.bot.look(angle, 0, true).catch(() => {});
     this.bot.setControlState('forward', true);
     this.bot.setControlState('sprint', false);
-    await new Promise(r => setTimeout(r, durationMs));
+
+    const startTime = Date.now();
+    while (Date.now() - startTime < durationMs) {
+      if (!this.bot || !this.bot.entity) break;
+      const pos = this.getPosition();
+      const yaw = this.bot.entity.yaw || 0;
+      const fwdX = -Math.sin(yaw);
+      const fwdZ = -Math.cos(yaw);
+      const checkPos = new Vec3(Math.floor(pos.x + fwdX), Math.floor(pos.y), Math.floor(pos.z + fwdZ));
+
+      const groundAhead = this.getBlockAt(checkPos.offset(0, -1, 0));
+      const deepGround = this.getBlockAt(checkPos.offset(0, -3, 0));
+      const hazardBlock = this.getBlockAt(checkPos);
+
+      const isHazard = (hazardBlock && (hazardBlock.name.includes('lava') || hazardBlock.name.includes('fire'))) ||
+                       (groundAhead && (groundAhead.name.includes('lava') || groundAhead.name.includes('fire')));
+      const isExtremeDrop = (!groundAhead || groundAhead.name === 'air' || groundAhead.name === 'cave_air') &&
+                            (!deepGround || deepGround.name === 'air' || deepGround.name === 'cave_air');
+
+      if (isHazard || isExtremeDrop) {
+        logger.warn('⚠️ [SmartWander] Detected hazard/cliff ahead! Stopping and redirecting...', 'DriverAdapter');
+        this.bot.setControlState('forward', false);
+        await this.bot.look(yaw + Math.PI * 0.75, 0, true).catch(() => {});
+        break;
+      }
+
+      await new Promise(r => setTimeout(r, 200));
+    }
+
     this.bot.setControlState('forward', false);
     return true;
   }

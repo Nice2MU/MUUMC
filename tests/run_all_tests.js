@@ -12,6 +12,8 @@ const TEST_FILES = [
   'tests/test_phase2.js',
   'tests/test_phase3.js',
   'tests/test_phase5.js',
+  'tests/test_scan_y_axis.js',
+  'tests/test_audit_fixes.js',
 ];
 
 function runTest(testFile) {
@@ -42,7 +44,7 @@ async function runAll() {
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
   logger.info('=======================================================', 'TestRunner');
-  logger.info(`🏆 ALL 4 TEST SUITES PASSED 100% IN ${duration}s!`, 'TestRunner');
+  logger.info(`🏆 ALL 6 TEST SUITES PASSED 100% IN ${duration}s!`, 'TestRunner');
   logger.info('=======================================================', 'TestRunner');
 }
 

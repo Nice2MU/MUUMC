@@ -169,11 +169,31 @@ class SafeDSL {
     // Vacuum Dropped Items: Whenever ANY block is broken in standalone mode, vacuum drop if nearby
     const dropsItem = !['air', 'cave_air', 'fire', 'water', 'lava', 'bedrock'].includes(freshTarget.name);
     if (dropsItem && !options.skipVacuum) {
-      const currentDist = this.adapter.distanceTo(blockPos);
-      if (currentDist > 1.8) {
-        await this.adapter.gotoXZ(blockPos.x, blockPos.z, 1.2, 1500).catch(() => {});
-        await new Promise(r => setTimeout(r, 120));
+      await new Promise(r => setTimeout(r, 120)); // Brief tick for item drop physics
+      const nearbyDrops = this.adapter.findDroppedItems ? this.adapter.findDroppedItems(6) : [];
+      const relevantDrops = nearbyDrops.filter(d => d.position && Math.hypot(d.position.x - blockPos.x, d.position.z - blockPos.z) <= 4.5);
+
+      if (relevantDrops.length > 0) {
+        for (const drop of relevantDrops) {
+          if (!drop || !drop.position) continue;
+          const dropDist = this.adapter.distanceTo(drop.position);
+          if (dropDist > 0.35) {
+            const vacuumTimeout = Math.max(2000, Math.min(5000, Math.round(dropDist * 800)));
+            const reached = await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.35, vacuumTimeout).catch(() => false);
+            if (!reached && drop.isValid) {
+              await this.adapter.unstuck(drop.position);
+              await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.35, 2000).catch(() => {});
+            }
+          }
+        }
+      } else {
+        // Step directly into the mined block cavity if outside comfortable pickup reach
+        const currentDist = this.adapter.distanceTo(blockPos);
+        if (currentDist > 0.4) {
+          await this.adapter.gotoXZ(blockPos.x + 0.5, blockPos.z + 0.5, 0.4, 2500).catch(() => {});
+        }
       }
+      await new Promise(r => setTimeout(r, 80));
     }
 
     return true;
@@ -413,8 +433,22 @@ class SafeDSL {
         }
       }
 
+      // Clear low leaves that often trap fallen logs or block walking around the tree base
+      const lowLeaves = this.adapter.findBlocks({
+        matching: ['oak_leaves', 'birch_leaves', 'spruce_leaves', 'jungle_leaves', 'acacia_leaves', 'dark_oak_leaves', 'cherry_leaves', 'mangrove_leaves'],
+        maxDistance: 3,
+        maxDistanceY: 2,
+        count: 4
+      });
+      for (const leafPos of lowLeaves) {
+        const leafBlock = this.adapter.getBlockAt(leafPos);
+        if (leafBlock) {
+          await this.safeDigBlock(leafBlock, { skipVacuum: true }).catch(() => {});
+        }
+      }
+
       // Collect fallen wood drops immediately right under the tree before moving to the next
-      await this.collectDrops(6).catch(() => {});
+      await this.pickupNearbyItems(8).catch(() => {});
     }
 
     // Proactive Housekeeping: Replant sapling if we have any
@@ -966,7 +1000,7 @@ class SafeDSL {
   /**
    * Finds all exposed ore blocks visible in nearby air/caves that the bot CAN harvest safely.
    */
-  findNearbyExposedOres(maxDistance = 16) {
+  findNearbyExposedOres(maxDistance = 16, maxDistanceY = 6) {
     const hasDiamondPick = this.adapter.hasItem('diamond_pickaxe') || this.adapter.hasItem('netherite_pickaxe');
     const hasIronPick = hasDiamondPick || this.adapter.hasItem('iron_pickaxe');
     const hasStonePick = hasIronPick || this.adapter.hasItem('stone_pickaxe');
@@ -978,6 +1012,7 @@ class SafeDSL {
       const highTierOres = this.adapter.findBlocks({
         matching: ['diamond_ore', 'deepslate_diamond_ore', 'gold_ore', 'deepslate_gold_ore', 'ancient_debris'],
         maxDistance,
+        maxDistanceY,
         count: 5
       });
       for (const pos of highTierOres) {
@@ -1010,8 +1045,9 @@ class SafeDSL {
       allowedOres.push('ancient_debris');
     }
 
-    const blocks = this.adapter.findBlocks({ matching: allowedOres, maxDistance, count: 25 });
-    return blocks.filter(bPos => this.isOreSafeToHarvest(bPos));
+    const blocks = this.adapter.findBlocks({ matching: allowedOres, maxDistance, maxDistanceY, count: 25 });
+    const currentPos = this.adapter.getPosition();
+    return blocks.filter(bPos => Math.abs(bPos.y - currentPos.y) <= maxDistanceY && this.isOreSafeToHarvest(bPos));
   }
 
   /**
@@ -1111,9 +1147,13 @@ class SafeDSL {
       if (!drop || !drop.position) continue;
       const dist = this.adapter.distanceTo(drop.position);
       if (dist > 0.8) {
-        await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.8, 2000).catch(() => {});
+        const reached = await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.8, 2000).catch(() => false);
+        if (!reached && drop.isValid) {
+          await this.adapter.unstuck(drop.position);
+          await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.8, 2000).catch(() => {});
+        }
       }
-      await new Promise(r => setTimeout(r, 120));
+      await new Promise(r => setTimeout(r, 100));
       collected++;
     }
     return collected;
@@ -1153,6 +1193,10 @@ class SafeDSL {
         mined += minedInVein;
       }
     }
+
+    if (mined > 0) {
+      await this.collectNearbyDrops(10).catch(() => {});
+    }
     return mined;
   }
 
@@ -1188,14 +1232,27 @@ class SafeDSL {
     ];
 
     const isDiamond = oreType.includes('diamond');
+    const isStoneLike = cleanOre.includes('stone') || cleanOre.includes('cobble') || cleanOre.includes('deepslate');
+    const stoneMatches = ['stone', 'cobblestone', 'deepslate', 'cobbled_deepslate', 'andesite', 'diorite', 'granite', 'tuff'];
     let targetBlocks = [];
 
-    if (isDiamond) {
+    if (isStoneLike) {
+      // 🪨 Direct Stone / Cobblestone gathering: Scan solid stone blocks within reach
+      targetBlocks = this.adapter.findBlocks({
+        matching: stoneMatches,
+        maxDistance: 16,
+        maxDistanceY: 6,
+        count: Math.max(16, count * 3),
+      }).filter(bPos => {
+        const above = this.adapter.getBlockAt(bPos.offset(0, 1, 0));
+        return !above || (!above.name.includes('lava') && !above.name.includes('water'));
+      });
+    } else if (isDiamond) {
       // 💎 Diamonds: Absolute Top Priority — scan all diamond ores in 16m radius
       targetBlocks = this.adapter.findBlocks({ matching: ['diamond_ore', 'deepslate_diamond_ore'], maxDistance: 16, count: 10 });
     } else {
       // Standard ores: Find exposed ores
-      targetBlocks = this.findNearbyExposedOres(12).filter(bPos => {
+      targetBlocks = this.findNearbyExposedOres(16, 6).filter(bPos => {
         const b = this.adapter.getBlockAt(bPos);
         return b && (oreNames.includes(b.name) || b.name.includes(oreType));
       });
@@ -1203,12 +1260,23 @@ class SafeDSL {
 
     if (targetBlocks.length === 0) {
       const currentY = this.adapter.getPosition().y;
-      if (currentY <= -53) {
-        logger.info(`💎 Already at optimal Diamond depth Y=${Math.round(currentY)} (above bedrock). Switching to horizontal Fishbone/Strip Mining!`, 'SafeDSL');
-        return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+      if (isStoneLike) {
+        logger.info('No exposed stone on surface. Digging down 2-3 blocks safely to expose stone...', 'SafeDSL');
+        await this.digDown(3);
+        const freshStone = this.adapter.findBlocks({ matching: stoneMatches, maxDistance: 8, maxDistanceY: 4, count: count * 2 });
+        if (freshStone.length > 0) {
+          targetBlocks = freshStone;
+        } else {
+          return await this.mineStrategically('stone', 55);
+        }
+      } else {
+        if (currentY <= -53) {
+          logger.info(`💎 Already at optimal Diamond depth Y=${Math.round(currentY)} (above bedrock). Switching to horizontal Fishbone/Strip Mining!`, 'SafeDSL');
+          return await this.branchMine({ length: 15, spacing: 3, branchLength: 6 });
+        }
+        logger.info(`No ${oreType} ores visible nearby. Descending towards Y=${isDiamond ? -54 : 16}...`, 'SafeDSL');
+        return await this.mineStrategically(oreType, isDiamond ? -54 : 16);
       }
-      logger.info(`No ${oreType} ores visible nearby. Descending towards Y=${isDiamond ? -54 : 16}...`, 'SafeDSL');
-      return await this.mineStrategically(oreType, isDiamond ? -54 : 16);
     }
 
     // Sort by closest distance
@@ -1229,10 +1297,20 @@ class SafeDSL {
       }
 
       const bObj = this.adapter.getBlockAt(bPos);
-      if (bObj && (oreNames.includes(bObj.name) || bObj.name.includes(oreType) || isDiamond)) {
-        const minedInVein = await this.mineConnectedVein(bPos, isDiamond ? ['diamond_ore', 'deepslate_diamond_ore'] : oreNames);
-        totalMined += minedInVein;
-        if (totalMined >= count) break;
+      const isMatch = isStoneLike
+        ? (bObj && stoneMatches.includes(bObj.name))
+        : (bObj && (oreNames.includes(bObj.name) || bObj.name.includes(oreType) || isDiamond));
+
+      if (bObj && isMatch) {
+        if (isStoneLike) {
+          const dug = await this.safeDigBlock(bObj);
+          if (dug) totalMined++;
+          if (totalMined >= count) break;
+        } else {
+          const minedInVein = await this.mineConnectedVein(bPos, isDiamond ? ['diamond_ore', 'deepslate_diamond_ore'] : oreNames);
+          totalMined += minedInVein;
+          if (totalMined >= count) break;
+        }
       }
     }
 
@@ -1248,6 +1326,11 @@ class SafeDSL {
       }
       logger.info(`All visible ${oreType} ores were unreachable. Descending towards Y=${isDiamond ? -54 : 16}...`, 'SafeDSL');
       return await this.mineStrategically(oreType, isDiamond ? -54 : 16);
+    }
+
+    if (totalMined > 0) {
+      logger.info(`📦 Sweeping and collecting all dropped items after mining ${totalMined} block(s)...`, 'SafeDSL');
+      await this.collectNearbyDrops(10).catch(() => {});
     }
 
     return { success: totalMined > 0, mined: totalMined };
@@ -1423,6 +1506,7 @@ class SafeDSL {
         break;
       }
     }
+    this._staircaseDir = dir;
 
     for (let step = 0; step < 4; step++) {
       // Threat check: If attacked or mob approached within 8m, halt staircase digging immediately!
@@ -1521,6 +1605,7 @@ class SafeDSL {
         }
       }
     }
+    await this.collectNearbyDrops(8).catch(() => {});
     return { reached: this.adapter.getPosition().y <= targetY, depth: this.adapter.getPosition().y };
   }
 
@@ -1680,6 +1765,7 @@ class SafeDSL {
       }
     }
 
+    await this.collectNearbyDrops(12).catch(() => {});
     return { success: true, oresFound: totalOresFound };
   }
 
@@ -1981,7 +2067,7 @@ class SafeDSL {
   async climbStaircaseUp(targetY = 64) {
     const current = this.adapter.getPosition();
     logger.info(`🪜 Climbing staircase back up from Y=${Math.round(current.y)} towards target Y=${targetY}...`, 'SafeDSL');
-    const reverseDir = new Vec3(-1, 0, 0);
+    const reverseDir = this._staircaseDir ? this._staircaseDir.scaled(-1) : new Vec3(-1, 0, 0);
     let lastY = current.y;
     let stuckSteps = 0;
 
@@ -2011,7 +2097,7 @@ class SafeDSL {
 
       const targetX = Math.floor(pos.x) + reverseDir.x;
       const targetYCoord = Math.floor(pos.y) + 1;
-      const targetZ = Math.floor(pos.z);
+      const targetZ = Math.floor(pos.z) + reverseDir.z;
 
       const headBlock = this.adapter.getBlockAt(new Vec3(targetX, targetYCoord + 1, targetZ));
       const stepBlock = this.adapter.getBlockAt(new Vec3(targetX, targetYCoord, targetZ));
@@ -2150,7 +2236,25 @@ class SafeDSL {
     let count = 0;
     for (const item of items) {
       if (item && item.isValid && item.position) {
-        await this.adapter.gotoXZ(item.position.x, item.position.z, 0.9, 2500).catch(() => {});
+        const currentDist = this.adapter.distanceTo(item.position);
+        if (currentDist > 0.8) {
+          const reached = await this.adapter.gotoXZ(item.position.x, item.position.z, 0.8, 2500).catch(() => false);
+          if (!reached && item.isValid) {
+            logger.info(`🚧 [CollectDrops] Obstructed on route to '${item.name || 'item'}'. Clearing obstacles & jumping forward...`, 'SafeDSL');
+            await this.adapter.unstuck(item.position);
+            await this.adapter.gotoXZ(item.position.x, item.position.z, 0.8, 2000).catch(() => {});
+
+            // Direct hop forward if within close reach (< 2.2m)
+            if (this.adapter.distanceTo(item.position) < 2.2 && this.adapter.bot) {
+              await this.adapter.lookAt(item.position).catch(() => {});
+              this.adapter.bot.setControlState('forward', true);
+              this.adapter.bot.setControlState('jump', true);
+              await new Promise(r => setTimeout(r, 400));
+              this.adapter.bot.clearControlStates();
+            }
+          }
+        }
+        await new Promise(r => setTimeout(r, 80));
         count++;
       }
     }
@@ -2225,22 +2329,78 @@ class SafeDSL {
   }
 
   /**
-   * Finds nearest bed and sleeps through the night.
+   * Finds nearest bed (all 16 colors) or places one from inventory and sleeps through the night.
    */
   async goToBed() {
-    const beds = this.adapter.findBlocks({ matching: ['red_bed', 'white_bed', 'blue_bed', 'yellow_bed', 'green_bed', 'black_bed'], maxDistance: 32, count: 1 });
+    const allBedColors = [
+      'white_bed', 'orange_bed', 'magenta_bed', 'light_blue_bed', 'yellow_bed',
+      'lime_bed', 'pink_bed', 'gray_bed', 'light_gray_bed', 'cyan_bed',
+      'purple_bed', 'blue_bed', 'brown_bed', 'green_bed', 'red_bed', 'black_bed'
+    ];
+
+    let beds = this.adapter.findBlocks({ matching: allBedColors, maxDistance: 32, count: 1 });
+    let placedFromInventory = false;
+
+    // If no bed is placed nearby, check if we carry one in inventory
     if (beds.length === 0) {
-      logger.warn('No beds found nearby.', 'SafeDSL');
-      return { success: false };
+      const invBed = this.adapter.getInventory().find(i => i.name && i.name.endsWith('_bed'));
+      if (invBed) {
+        logger.info(`🛏️ [Bed Deployment] Carrying '${invBed.name}' in inventory. Finding a spot to place bed...`, 'SafeDSL');
+        const pos = this.adapter.getPosition();
+        const candidateOffsets = [
+          new Vec3(1, 0, 0),
+          new Vec3(-1, 0, 0),
+          new Vec3(0, 0, 1),
+          new Vec3(0, 0, -1)
+        ];
+
+        for (const off of candidateOffsets) {
+          const supportPos = new Vec3(Math.floor(pos.x) + off.x, Math.floor(pos.y) - 1, Math.floor(pos.z) + off.z);
+          const bedHeadSupport = supportPos.offset(off.x, 0, off.z);
+          const placePos = supportPos.offset(0, 1, 0);
+          const placeHeadPos = bedHeadSupport.offset(0, 1, 0);
+
+          const supportBlock = this.adapter.getBlockAt(supportPos);
+          const headSupportBlock = this.adapter.getBlockAt(bedHeadSupport);
+          const targetBlock = this.adapter.getBlockAt(placePos);
+          const targetHeadBlock = this.adapter.getBlockAt(placeHeadPos);
+
+          const isSupportSolid = supportBlock && !['air', 'cave_air', 'water', 'lava'].includes(supportBlock.name);
+          const isHeadSupportSolid = headSupportBlock && !['air', 'cave_air', 'water', 'lava'].includes(headSupportBlock.name);
+          const isTargetAir = targetBlock && ['air', 'cave_air'].includes(targetBlock.name);
+          const isHeadAir = targetHeadBlock && ['air', 'cave_air'].includes(targetHeadBlock.name);
+
+          if (isSupportSolid && isHeadSupportSolid && isTargetAir && isHeadAir) {
+            const placed = await this.safePlaceBlock(invBed.name, placePos, supportPos).catch(() => false);
+            if (placed) {
+              placedFromInventory = true;
+              beds = this.adapter.findBlocks({ matching: allBedColors, maxDistance: 6, count: 1 });
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (beds.length === 0) {
+      logger.warn('No beds found nearby and no bed in inventory.', 'SafeDSL');
+      return { success: false, reason: 'no_bed_available' };
     }
 
     const bedBlock = this.adapter.getBlockAt(beds[0]);
-    await this.adapter.goto(bedBlock.position.x, bedBlock.position.y, bedBlock.position.z, 1.5, 6000);
-    await this.adapter.rawBot.sleep(bedBlock);
-    logger.info('🛌 Sleeping in bed...', 'SafeDSL');
+    if (!bedBlock) return { success: false };
+
+    try {
+      await this.adapter.goto(bedBlock.position.x, bedBlock.position.y, bedBlock.position.z, 1.5, 6000);
+      await this.adapter.rawBot.sleep(bedBlock);
+      logger.info('🛌 Sleeping peacefully in bed...', 'SafeDSL');
+    } catch (err) {
+      logger.warn(`Could not sleep in bed: ${err.message}`, 'SafeDSL');
+      return { success: false, reason: err.message };
+    }
 
     // Auto-record HomeBed landmark in worldMemory
-    if (this.worldMemory) {
+    if (this.worldMemory && !placedFromInventory) {
       const serverKey = this.adapter?.botClient?.getServerIdentifier?.() || null;
       this.worldMemory.saveLandmark(
         serverKey,

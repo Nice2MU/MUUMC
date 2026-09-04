@@ -240,11 +240,13 @@ assets/mcp/muu-mc/
 │   ├── error_reflection.json            # Error reflection lessons
 │   └── player_safety_rules.json         # No-friendly-fire & safety rules
 └── tests/
-    ├── run_all_tests.js                 # Master test suite runner
+    ├── run_all_tests.js                 # Master test suite runner (runs 6 suites)
     ├── test_phase1.js                   # Driver Adapter & DSL unit test
     ├── test_phase2.js                   # Sandbox & Live Ollama Coder test
     ├── test_phase3.js                   # Two-Tier Memory unit test
     ├── test_phase5.js                   # Autonomous Engine & Preemption test
+    ├── test_scan_y_axis.js              # Y-axis clamping & bounded perception scan test
+    ├── test_audit_fixes.js              # Unstuck obstacle digging, drop sensors, 16 beds test
     ├── test_reach_distance.js           # 4.5m Human reach & eyeDistanceTo unit test
     ├── test_ore_tier_guard.js           # Tool harvest requirements & tech progression test
     └── test_tool_lifecycle.js           # Tool degradation & proactive crafting test
@@ -374,5 +376,27 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
     - Eliminates the need for external secondary ports (25570), additional Playit.gg tunnels, or local firewall port forwarding.
     - All Simple Voice Chat in-game microphone captures and KaoPadTTS playback audio are encapsulated inside Minecraft's native `custom_payload` protocol channel (`muu:voice`) over the standard game connection (port 25565).
     - Features transparent auto-chunking (payloads $\le 30\text{KB}$ sent in a single packet; payloads $> 30\text{KB}$ chunked into $28\text{KB}$ packets with automated reassembly) for zero-latency, zero-loss communication.
+16. **⛏️ Intelligent Forward-Jump & Obstacle Excavation Unstuck (`src/driver/adapter.js`)**:
+    - Replaces counterproductive backward retreats with an active 2-phase forward unstuck mechanism (`forward: true, jump: true`).
+    - Inspects head-level (`y+1.6`) and foot-level (`y`) solid obstacles (leaves, dirt, stone, vines, etc.) blocking the direct line to the target destination or dropped items.
+    - Automatically equips the optimal tool and excavates the blocking obstruction, physically opening the corridor and re-verifying distance.
+17. **🧲 Unbanned Drop Sensor & Close-Range Cavity Vacuum (`src/driver/adapter.js`, `src/coder/dsl.js`)**:
+    - Removed restrictive `junkNames` blacklist (`stone`, `cobblestone`, `deepslate`, `dirt`, `stick`, `gravel`, `sand`) from `findDroppedItems` — 100% of mined resources and blocks are recognized and collected.
+    - Tightened drop collection reach from 1.2m to 0.35m–0.4m in `safeDigBlock`, ensuring the bot steps directly into 1-block floor/wall cavities or onto item entities for guaranteed vacuum suction.
+    - Added sweeping passes (`collectNearbyDrops(10)`) after `mineOres`, `mineAllNearbyOres`, `branchMine`, and `staircaseMineDown`.
+    - Automatically clears low-hanging leaves in `chopTree` so wood logs never get stuck out of reach.
+18. **🪨 Direct Local Stone & Cobblestone Harvesting (`src/coder/dsl.js`)**:
+    - `mineOres('stone')` directly mines stone-family blocks (`stone`, `cobblestone`, `deepslate`, `andesite`, `diorite`, `granite`, `tuff`) in the immediate area without triggering an unnecessary 50-block staircase descent to Y=16.
+19. **🛏️ Complete 16-Color Bed Support & Autonomous Mobile Camp (`src/coder/dsl.js`)**:
+    - Expands bed recognition from 6 to all 16 Minecraft bed colors (`white_bed`, `orange_bed`, etc.).
+    - Mobile Camp placement: If night falls and no placed bed exists nearby, checks inventory for any bed, places it on the ground (`safePlaceBlock`) to sleep, and safely packs it back up into inventory at sunrise.
+20. **📐 Multi-Directional Staircase Mining & Ascent (`src/coder/dsl.js`)**:
+    - Records the 3D digging direction vector (`_staircaseDir`) during `staircaseMineDown`.
+    - `climbStaircaseUp` accurately reverses both X and Z axes (`targetZ = Math.floor(pos.z) + reverseDir.z`), preventing sidewall collisions when climbing Z-axis aligned shafts.
+21. **⚠️ Hazard & Cliff Protection in Smart Wander (`src/driver/adapter.js`)**:
+    - Raycasts for steep drops $> 3$ blocks and liquid hazards (lava/fire) before stepping forward during wander mode, preventing lethal falls into ravines or magma pools.
+22. **📦 Remote Chunk Unload Protection (`data/skills/deposit_chest.js`)**:
+    - Safely navigates near chest coordinates (`goto`) before querying block data, avoiding null pointer crashes across unloaded chunk boundaries.
+
 
 

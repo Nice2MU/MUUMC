@@ -1,122 +1,5 @@
 [
   {
-    "id": "err_1788201944904",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-08-31T18:45:44.904Z"
-  },
-  {
-    "id": "err_1788202440508",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-08-31T18:54:00.508Z"
-  },
-  {
-    "id": "err_1788202468864",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-08-31T18:54:28.864Z"
-  },
-  {
-    "id": "err_1788203040515",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-08-31T19:04:00.515Z"
-  },
-  {
-    "id": "err_1788240334944",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T05:25:34.944Z"
-  },
-  {
-    "id": "err_1788282714161",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T17:11:54.161Z"
-  },
-  {
-    "id": "err_1788283103696",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T17:18:23.696Z"
-  },
-  {
-    "id": "err_1788283513310",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T17:25:13.310Z"
-  },
-  {
-    "id": "err_1788283656541",
-    "error_signature": "Unexpected identifier 'Found'",
-    "task_pattern": "หาบล็อกหิน Stone ใกล้ๆ เคลียร์ดินที่บังออก และขุดหินด้วยที่ขุดให้ได้ Cobblestone",
-    "failed_code": "```javascript\n// Find nearby stone blocks, clear obstructing dirt, and mine with wooden pickaxe\nasync function executeTask(dsl, world) {\n    // First, eat if hungry to maintain health\n    await dsl.eatIfHungry();\n    \n    // Check health - if critical, consider retreat\n    if (world.health < 5) {\n        dsl.chat(\"Health critical, aborting mining task\");\n        return;\n    }\n    \n    // Find stone blocks nearby (not cobblestone)\n    const stoneBlocks = world.findBlocks({\n        blockType: 'stone',\n        maxDistance: 32,\n        count: 10\n    });\n    \n    if (stoneBlocks.length === 0) {\n        dsl.chat(\"No stone blocks found nearby\");\n        return;\n    }\n    \n    // Pick the closest stone block\n    const targetStone = stoneBlocks[0];\n    dsl.chat(`Found stone at ${targetStone.x}, ${targetStone.y}, ${targetStone.z}`);\n    \n    // Navigate to the stone block\n    await dsl.navigateXZ(targetStone.x, targetStone.z, 2);\n    \n    // Check for obstructing dirt/grass blocks above the stone\n    const obstructingBlocks = [];\n    for (let dy = 1; dy <= 2; dy++) {\n        const abovePos = { x: targetStone.x, y: targetStone.y + dy, z: targetStone.z };\n        const block",
-    "fix_summary": "Self-healed 1-shot repair",
-    "repaired_code": "await dsl.eatIfHungry();\n\n    if (world.health < 5) {\n        dsl.chat(\"Health critical, aborting mining task\");\n        return;\n    }\n\n    const stoneBlocks = world.findBlocks({\n        blockType: 'stone',\n        maxDistance: 32,\n        count: 10\n    });\n\n    if (!stoneBlocks || stoneBlocks.length === 0) {\n        dsl.chat(\"No stone blocks found nearby\");\n        return;\n    }\n\n    const targetStone = stoneBlocks[0];\n    dsl.chat(\"Found stone, navigating\");\n\n    await dsl.navigateXZ(targetStone.x, targetStone.z, 2);\n\n    await dsl.safeDigBlock({ x: targetStone.x, y: targetStone.y, z: targetStone.z }, { tool: 'wooden_pickaxe' });",
-    "timestamp": "2026-09-01T17:27:36.541Z"
-  },
-  {
-    "id": "err_1788283873712",
-    "error_signature": "missing ) after argument list",
-    "task_pattern": "หาบล็อกหิน Stone ใกล้ๆ เคลียร์ดินที่บังออก และขุดหินด้วยที่ขุดให้ได้ Cobblestone",
-    "failed_code": "async function solveTask() {\n  const stonePositions = world.findBlocks({ name: 'stone', maxDistance: 32, count: 20 });\n  if (stonePositions.length === 0) {\n    dsl.chat('No stone found nearby');\n    return;\n  }\n\n  // Pick the first reachable stone block (not underground, prefer visible surface)\n  let targetStone = null;\n  for (const pos of stonePositions) {\n    if (pos.y >= 60) {\n      targetStone = pos;\n      break;\n    }\n  }\n  if (!targetStone) targetStone = stonePositions[0];\n\n  // Navigate to stone block (within 2m)\n  await dsl.navigateXZ(targetStone.x, targetStone.z, 2);\n\n  // Check for dirt above that may obstruct digging\n  const abovePos = { x: targetStone.x, y: targetStone.y + 1, z: targetStone.z };\n  const blockAbove = world.getBlockAt(abovePos);\n  if (blockAbove && blockAbove.name === 'dirt') {\n    await dsl.safeDigBlock(abovePos, { toolName: null });\n  }\n\n  // Dig the stone to get cobblestone (uses wooden pickaxe which is in inventory)\n  await dsl.safeDigBlock(targetStone, { toolName: 'wooden_pickaxe' });\n}\n\nsolveTask().catch(err => dsl.chat('Error: ' + err.message",
-    "fix_summary": "Self-healed 1-shot repair",
-    "repaired_code": "async function solveTask() {\n  // Position is at (15.5, 111, -2.5) - currently in a tree area\n  // Need to find stone, clear dirt obstruction, and mine cobblestone\n  \n  const stonePositions = world.findBlocks({ name: 'stone', maxDistance: 32, count: 20 });\n  if (!stonePositions || stonePositions.length === 0) {\n    dsl.chat('No stone found nearby');\n    return;\n  }\n\n  // Pick the highest stone block (most likely on surface)\n  stonePositions.sort((a, b) => b.y - a.y);\n  const targetStone = stonePositions[0];\n  dsl.chat('Targeting stone at ' + targetStone.x + ',' + targetStone.y + ',' + targetStone.z);\n\n  // Navigate close to the stone (within 2m)\n  await dsl.navigateXZ(targetStone.x, targetStone.z, 2);\n\n  // Check for dirt/grass above that may obstruct digging\n  const abovePos = { x: targetStone.x, y: targetStone.y + 1, z: targetStone.z };\n  const blockAbove = world.getBlockAt(abovePos);\n  if (blockAbove && (blockAbove.name === 'dirt' || blockAbove.name === 'grass_block' || blockAbove.name === 'grass')) {\n    dsl.chat('Clearing dirt above stone');\n    await dsl.safeDigBlock(abovePos, { toolName: null });\n  }\n\n  // Dig the stone with wooden pickaxe to get cobblestone\n  await dsl.safeDigBlock(targetStone, { toolName: 'wooden_pickaxe' });\n\n  // Pick up the dropped cobblestone\n  await dsl.pickupNearbyItems(12);\n}\n\nsolveTask().catch(function(err) { dsl.chat('Error: ' + err.message); });",
-    "timestamp": "2026-09-01T17:31:13.712Z"
-  },
-  {
-    "id": "err_1788284303264",
-    "error_signature": "Unexpected token ')'",
-    "task_pattern": "เลือดเหลือน้อย (2.6666669845581055 HP) ให้วิ่งถอยหนีออกจากมอนสเตอร์ spider",
-    "failed_code": "// Health is critically low (2.67/20). Must retreat from the spider immediately.\n// Spider is at (47.4, 80, 1.1), distance 9m. We need to flee in the opposite direction.\n// Our position is (41.7, 84, -4.5). Fleeing opposite: subtract spider vector from our position.\nasync function main() {\n    dsl.chat(\"CRITICAL HEALTH! Retreating from spider!\");\n\n    // First, avoid enemies to put distance\n    await dsl.avoidEnemies(16);\n\n    // Continue fleeing further from spider direction\n    const spiderPos = { x: 47.4, y: 80, z: 1.1 };\n    const myPos = world.position;\n\n    // Calculate retreat direction (away from spider)\n    const dx = myPos.x - spiderPos.x;\n    const dz = myPos.z - spiderPos.z;\n    const len = Math.sqrt(dx * dx + dz * dz);\n    const fleeX = myPos.x + (dx / len) * 30;\n    const fleeZ = myPos.z + (dz / len) * 30;\n\n    // Navigate to safe distance\n    await dsl.navigateXZ(Math.round(fleeX), Math.round(fleeZ), 1);\n\n    // Place torch for safety if dark\n    await dsl.placeTorchIfDark();\n\n    // Try to eat if we have food (",
-    "fix_summary": "Self-healed 1-shot repair",
-    "repaired_code": "async function main() {\n    dsl.chat(\"CRITICAL HEALTH! Retreating from spider!\");\n\n    // Avoid enemies to put distance between us and spider\n    await dsl.avoidEnemies(16);\n\n    // Calculate flee direction away from spider\n    const spiderPos = { x: 47.4, y: 80, z: 1.1 };\n    const myPos = world.position;\n\n    const dx = myPos.x - spiderPos.x;\n    const dz = myPos.z - spiderPos.z;\n    const len = Math.sqrt(dx * dx + dz * dz);\n\n    // Safety check for zero length\n    if (len === 0) {\n        await dsl.navigateXZ(myPos.x - 30, myPos.z - 30, 1);\n    } else {\n        const fleeX = myPos.x + (dx / len) * 30;\n        const fleeZ = myPos.z + (dz / len) * 30;\n        await dsl.navigateXZ(Math.round(fleeX), Math.round(fleeZ), 1);\n    }\n\n    // Place torch for safety if dark\n    await dsl.placeTorchIfDark();\n\n    // Try to eat if we have food\n    await dsl.eatIfHungry();\n\n    // Place another torch and continue fleeing if needed\n    await dsl.avoidEnemies(16);\n\n    dsl.chat(\"Retreat complete, health restored.\");\n}\n\nmain().catch(err => dsl.chat(\"Error: \" + err.message));",
-    "timestamp": "2026-09-01T17:38:23.264Z"
-  },
-  {
-    "id": "err_1788285988212",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T18:06:28.212Z"
-  },
-  {
-    "id": "err_1788286123335",
-    "error_signature": "dsl.equipItem is not a function",
-    "task_pattern": "ขุดบันไดลงใต้ดิน Staircase Mining สู่ระดับ Y=16 เพื่อค้นหาแร่เหล็ก Iron Ore",
-    "failed_code": "await dsl.avoidEnemies(20);\nawait dsl.eatIfHungry();\nawait dsl.equipItem('stone_pickaxe');\nawait dsl.staircaseMineDown(16);",
-    "fix_summary": "Self-healed 1-shot repair",
-    "repaired_code": "await dsl.avoidEnemies(20);\nawait dsl.eatIfHungry();\nawait dsl.staircaseMineDown(16);",
-    "timestamp": "2026-09-01T18:08:43.335Z"
-  },
-  {
     "id": "err_1788286229440",
     "error_signature": "Cannot mine block: line of sight obstructed",
     "task_pattern": "mine_block",
@@ -448,5 +331,122 @@
     "fix_summary": "Check line-of-sight and step closer before digging",
     "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
     "timestamp": "2026-09-04T09:22:40.415Z"
+  },
+  {
+    "id": "err_1788531020333",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:10:20.333Z"
+  },
+  {
+    "id": "err_1788531108709",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:11:48.709Z"
+  },
+  {
+    "id": "err_1788531766310",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:22:46.310Z"
+  },
+  {
+    "id": "err_1788532235722",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:30:35.722Z"
+  },
+  {
+    "id": "err_1788532855796",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:40:55.796Z"
+  },
+  {
+    "id": "err_1788533232833",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:47:12.833Z"
+  },
+  {
+    "id": "err_1788533268758",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:47:48.758Z"
+  },
+  {
+    "id": "err_1788533687656",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:54:47.656Z"
+  },
+  {
+    "id": "err_1788533717662",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:55:17.662Z"
+  },
+  {
+    "id": "err_1788533982964",
+    "error_signature": "Crafting Table is required but could not be deployed or reached.",
+    "task_pattern": "มูมิวมีหินเยอะมากแต่ยังใช้ที่ขุดไม้ ซึ่งขุดแร่เหล็กไม่ได้ ต้องคราฟ Stone Pickaxe ก่อนถึงจะทำตามเป้าหมายหลักได้ค่า!",
+    "failed_code": "await dsl.craftItem('stone_pickaxe', 1);",
+    "fix_summary": "Self-healed 1-shot repair",
+    "repaired_code": "await dsl.eatIfHungry();\nawait dsl.craftItem('stone_pickaxe', 1);",
+    "timestamp": "2026-09-04T14:59:42.964Z"
+  },
+  {
+    "id": "err_1788533987375",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T14:59:47.375Z"
+  },
+  {
+    "id": "err_1788534185263",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T15:03:05.263Z"
+  },
+  {
+    "id": "err_1788534285959",
+    "error_signature": "Cannot mine block: line of sight obstructed",
+    "task_pattern": "mine_block",
+    "failed_code": "await dsl.safeDigBlock(block);",
+    "fix_summary": "Check line-of-sight and step closer before digging",
+    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
+    "timestamp": "2026-09-04T15:04:45.959Z"
   }
 ]

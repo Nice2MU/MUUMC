@@ -24,8 +24,17 @@ if (!nearestChest) {
   return { success: false, error: 'No chest found' };
 }
 
-logger.info(`📦 Depositing surplus items into chest at (${nearestChest.coords.x}, ${nearestChest.coords.y}, ${nearestChest.coords.z})...`, 'SafeDSL');
-const chestBlock = dsl.adapter.getBlockAt(nearestChest.coords);
+logger.info(`📦 Approaching storage chest at (${nearestChest.coords.x}, ${nearestChest.coords.y}, ${nearestChest.coords.z})...`, 'SafeDSL');
+await dsl.adapter.goto(nearestChest.coords.x, nearestChest.coords.y, nearestChest.coords.z, 2.5, 8000).catch(() => {});
+
+let chestBlock = dsl.adapter.getBlockAt(nearestChest.coords);
+if (!chestBlock || !['chest', 'trapped_chest', 'barrel'].includes(chestBlock.name)) {
+  const nearby = dsl.adapter.findBlocks({ matching: ['chest', 'trapped_chest', 'barrel'], maxDistance: 5, count: 1 });
+  if (nearby.length > 0) {
+    chestBlock = dsl.adapter.getBlockAt(nearby[0]);
+  }
+}
+
 if (chestBlock) {
   await dsl.depositSurplusToChest(chestBlock);
   return { success: true };

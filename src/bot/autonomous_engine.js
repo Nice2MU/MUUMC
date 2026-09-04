@@ -23,18 +23,18 @@ const PLANNER_SYSTEM_PROMPT = `You are Muumiu (มูมิว), an autonomous, 
 You observe your live in-game situation and decide your next strategic gameplay action.
 
 Goals hierarchy:
-1. Survival: Avoid starving, sleep during night if bed nearby, stay healthy.
+1. Survival: Avoid starving, sleep through the night ("sleep_bed" when is_night is true — can sleep in existing bed or automatically deploy one from inventory!), cook raw food in furnace for optimal saturation, stay healthy.
 2. Tech Progression: Wood -> Crafting Table -> Wooden Pickaxe -> Stone Tools & Furnace -> Iron Tools & Armor -> Diamond Gear.
 3. Resource Gathering & Smelting: Chop trees for wood/sticks, mine stone/coal/iron, smelt raw ores in furnace, mine diamonds at Y=-54.
-4. Companion Presence: Accompany nearby players if present and not busy with critical gear progression.
+4. Companion Presence & Playmate: Accompany nearby players if present within 24m! If a friendly player is nearby and you have basic tools, choose "follow_player" to hang out, explore together, or assist them.
 5. Exploration: Spelunk caves, explore terrain, build shelter when ready.
 
 AVAILABLE ACTIONS:
 - "chop_tree": { "count": 2-4 } (Gathers logs, replants saplings)
 - "craft_item": { "item_name": "oak_planks"|"stick"|"crafting_table"|"wooden_pickaxe"|"wooden_axe"|"stone_pickaxe"|"stone_axe"|"stone_sword"|"furnace"|"torch"|"iron_pickaxe"|"iron_sword"|"shield"|"iron_chestplate"|"diamond_pickaxe"|..., "count": 1 }
-- "mine_stone": { "count": 4-8 } (Mines stone for cobblestone)
+- "mine_stone": { "count": 4-8 } (Mines nearby stone/cobblestone directly)
 - "mine_ore": { "ore_type": "coal"|"iron"|"gold"|"diamond", "count": 2-4 } (Mines target ore vein)
-- "smelt_item": { "item_name": "raw_iron"|"raw_copper"|"raw_gold"|"raw_beef", "count": 1-4 } (Smelts in furnace)
+- "smelt_item": { "item_name": "raw_iron"|"raw_copper"|"raw_gold"|"raw_beef"|"raw_porkchop"|"raw_mutton"|"raw_chicken", "count": 1-4 } (Smelts ores or cooks meat in furnace)
 - "staircase_mine": { "target_y": 16|-54 } (Digs a safe 1x2 diagonal staircase down to target Y level)
 - "branch_mine": { "length": 15 } (Fishbone mining at current deep level)
 - "explore_cave": { "duration_sec": 60 } (Spelunks nearby cave, torches dark spots, harvests exposed ores)
@@ -42,16 +42,21 @@ AVAILABLE ACTIONS:
 - "mine_remembered_ore": { "x": number, "y": number, "z": number } (Navigates to remembered diamond/ore vein)
 - "collect_drops": { "radius": 16 } (Vacuums up dropped items nearby)
 - "eat_food": {} (Eats available food from inventory)
-- "sleep_bed": {} (Sleeps in nearby bed during night)
+- "sleep_bed": {} (Sleeps in nearby bed or deploys bed from inventory during night)
 - "hunt_animal": { "animal_type": "chicken"|"cow"|"pig"|"sheep" } (Hunts nearby passive animal for meat and leather, collects drops)
 - "navigate_landmark": { "landmark_name": "SurfaceSpawn"|"MineEntrance"|"HomeBed"|"LastDeathPoint" } (Navigates to known landmark from memory)
 - "deposit_chest": {} (Deposits surplus junk and blocks into nearest memory storage chest)
-- "follow_player": { "target_player": "username", "range": 3 } (Walks near player)
+- "follow_player": { "target_player": "username", "range": 3 } (Walks near player to keep company)
 - "explore_terrain": { "radius": 24 } (Explores surrounding land)
 - "custom_task": { "task_description": "..." } (For any unique creative task that Agent 2 will code)
 
 CRITICAL RULES:
-1. GOAL FOCUS & PERSISTENCE: Maintain your "strategic_objective" across turns! For example, if your objective is "ล่าสัตว์หาอาหารก่อนลงเหมือง", do not switch to chopping wood or exploring after just 1 animal unless you have collected enough food. Stick with your objective until completed or forced to change by immediate danger.
+1. GOAL FOCUS & COMMITMENT (CRITICAL - AVOID ADHD TASK FLIPPING):
+   - Maintain your "strategic_objective" across turns! Check "steps_on_current_objective" in telemetry.
+   - If your objective is e.g. "ล่าสัตว์หาอาหารก่อนลงเหมือง", persist with hunting or gathering food until you hold at least 5-6 food items in your inventory! DO NOT switch to chopping wood, mining, or wandering aimlessly after just 1 animal!
+   - If your objective is e.g. "ตัดไม้ทำอุปกรณ์และเตียง", persist until you have at least 12-16 logs and can craft the necessary tools/bed, DO NOT abandon it after 1 log!
+   - If your objective is e.g. "ขุดเหมืองหาแร่เหล็ก", persist with mining stone and searching for iron until you have at least 3-6 iron ore/ingots!
+   - Complete each gameplay milestone fully before transitioning to the next objective.
 2. TOOL LIFECYCLE & CRITICAL DURABILITY (MANDATORY):
    - Always inspect "status.tools_status" and "status.critical_tool_alert" before selecting an action!
    - If "critical_tool_alert" is present OR pickaxe has_tool is false OR pickaxe durability_percent <= 5%:
@@ -104,7 +109,7 @@ class AutonomousEngine {
     this.isRunning = false;
     this.isBusy = false;
     this._loopInterval = null;
-    this._cfg = config.minecraft?.autonomous || {
+    this._cfg = (client?.config?.autonomous) || config.minecraft?.autonomous || {
       enabled: true,
       idle_timeout_ms: 6000,
       explore_radius: 24,
@@ -137,6 +142,9 @@ class AutonomousEngine {
 
   start() {
     if (this.isRunning) return;
+    if (this._cfg && this._cfg.enabled === false) {
+      return;
+    }
     this.isRunning = true;
     this._lastTaskTime = 0;
     this._lastMeaningfulActionTime = Date.now();
@@ -340,7 +348,7 @@ class AutonomousEngine {
 
     // 4. Critical Low HP Evasion (< 8 HP)
     if (adapter.getHealth() < 8) {
-      const hostiles = adapter.findHostiles(12);
+      const hostiles = adapter.findHostiles(10);
       if (hostiles.length > 0) {
         this._currentGoal = 'fleeing_danger';
         logger.warn(`🏃 [Reflex] Critical Low HP (${adapter.getHealth()})! Retreating from ${hostiles[0].name}...`, 'AutonomousEngine');
@@ -352,7 +360,7 @@ class AutonomousEngine {
 
     // 5. Hostile Mob Combat & Creeper Evasion
     if (this._cfg.self_defense !== false) {
-      const hostiles = adapter.findHostiles(12);
+      const hostiles = adapter.findHostiles(10);
       if (hostiles.length >= 2) {
         this._currentGoal = 'evading_mob_group';
         logger.warn(`🛡️ [Reflex] Hostile group detected (${hostiles.length})! Backing off...`, 'AutonomousEngine');
@@ -417,16 +425,16 @@ class AutonomousEngine {
     }
 
     const nearby = {
-      crafting_table_nearby: adapter.findBlocks({ matching: 'crafting_table', maxDistance: 12, count: 1 }).length > 0,
-      furnace_nearby: adapter.findBlocks({ matching: 'furnace', maxDistance: 12, count: 1 }).length > 0,
-      chests_nearby: adapter.findBlocks({ matching: ['chest', 'barrel'], maxDistance: 16, count: 1 }).length > 0,
-      beds_nearby: adapter.findBlocks({ matching: ['white_bed', 'red_bed', 'blue_bed', 'black_bed', 'yellow_bed', 'green_bed', 'purple_bed', 'orange_bed', 'cyan_bed', 'light_blue_bed', 'magenta_bed', 'pink_bed', 'brown_bed', 'gray_bed', 'light_gray_bed', 'lime_bed'], maxDistance: 24, count: 1 }).length > 0,
-      exposed_ores: this.client.dsl ? this.client.dsl.findNearbyExposedOres(12).map(p => adapter.getBlockAt(p)?.name).filter(Boolean) : [],
+      crafting_table_nearby: adapter.findBlocks({ matching: 'crafting_table', maxDistance: 24, maxDistanceY: 6, count: 1 }).length > 0,
+      furnace_nearby: adapter.findBlocks({ matching: 'furnace', maxDistance: 24, maxDistanceY: 6, count: 1 }).length > 0,
+      chests_nearby: adapter.findBlocks({ matching: ['chest', 'barrel'], maxDistance: 24, maxDistanceY: 6, count: 1 }).length > 0,
+      beds_nearby: adapter.findBlocks({ matching: ['white_bed', 'red_bed', 'blue_bed', 'black_bed', 'yellow_bed', 'green_bed', 'purple_bed', 'orange_bed', 'cyan_bed', 'light_blue_bed', 'magenta_bed', 'pink_bed', 'brown_bed', 'gray_bed', 'light_gray_bed', 'lime_bed'], maxDistance: 24, maxDistanceY: 6, count: 1 }).length > 0,
+      exposed_ores: this.client.dsl ? this.client.dsl.findNearbyExposedOres(16, 6).map(p => adapter.getBlockAt(p)?.name).filter(Boolean) : [],
     };
 
-    const hostiles = adapter.findHostiles(14).map(e => ({ name: e.name, distance: Math.round(adapter.distanceTo(e.position) * 10) / 10 }));
-    const animals = adapter.findAnimals(14).map(e => ({ name: e.name, distance: Math.round(adapter.distanceTo(e.position) * 10) / 10 }));
-    const players = Object.values(rawBot?.players || {}).filter(p => p.username !== rawBot.username && p.entity).map(p => ({
+    const hostiles = adapter.findHostiles(10, 6).map(e => ({ name: e.name, distance: Math.round(adapter.distanceTo(e.position) * 10) / 10 }));
+    const animals = adapter.findAnimals(24, 6).map(e => ({ name: e.name, distance: Math.round(adapter.distanceTo(e.position) * 10) / 10 }));
+    const players = Object.values(rawBot?.players || {}).filter(p => p.username !== rawBot.username && p.entity && adapter.distanceTo(p.entity.position) <= 24 && Math.abs(p.entity.position.y - pos.y) <= 6).map(p => ({
       username: p.username,
       distance: Math.round(adapter.distanceTo(p.entity.position) * 10) / 10,
     }));
@@ -764,7 +772,7 @@ Analyze your inventory, surroundings, and recent actions. Choose your next strat
       }
 
       // Check action cooldown
-      const actionKey = `${action}:${params.item_name || params.ore_type || ''}`;
+      const actionKey = `${action}:${params.item_name || params.ore_type || params.animal_type || ''}`;
       if (this._goalCooldowns[actionKey] && Date.now() < this._goalCooldowns[actionKey]) {
         logger.info(`⏳ Action '${actionKey}' is on cooldown. Exploring surroundings instead...`, 'AutonomousEngine');
         action = 'explore_terrain';
@@ -803,8 +811,8 @@ Analyze your inventory, surroundings, and recent actions. Choose your next strat
       if (this._recentActions.length > 5) this._recentActions.shift();
 
       if (record.status === 'error') {
-        this._goalCooldowns[actionKey] = Date.now() + 20000;
-        logger.warn(`Goal '${actionKey}' failed. Backing off for 20s...`, 'AutonomousEngine');
+        this._goalCooldowns[actionKey] = Date.now() + 10000;
+        logger.warn(`Goal '${actionKey}' failed. Backing off for 10s...`, 'AutonomousEngine');
       } else {
         delete this._goalCooldowns[actionKey];
       }
@@ -903,9 +911,9 @@ Analyze your inventory, surroundings, and recent actions. Choose your next strat
       return;
     }
 
-    // Proactive Anti-Sleep Kickstart (>8s inactivity when not busy)
+    // Proactive Anti-Sleep Kickstart (>25s inactivity when not busy)
     const inactiveDuration = Date.now() - this._lastMeaningfulActionTime;
-    if (!this.isBusy && inactiveDuration > 8000) {
+    if (!this.isBusy && inactiveDuration > 25000) {
       this._lastMeaningfulActionTime = Date.now();
       this._lastWatchdogMoveTime = Date.now();
       await this._forceKickstartAction(adapter, dsl);

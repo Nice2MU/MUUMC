@@ -7,7 +7,7 @@
       "z": -300.2
     },
     "description": "Main Base",
-    "updated_at": "2026-09-04T09:22:40.412Z"
+    "updated_at": "2026-09-04T15:04:45.957Z"
   },
   "MineEntrance": {
     "name": "MineEntrance",
@@ -17,6 +17,6 @@
       "z": -280
     },
     "description": "Main Staircase Mine",
-    "updated_at": "2026-09-04T09:22:40.416Z"
+    "updated_at": "2026-09-04T15:04:45.960Z"
   }
 }
