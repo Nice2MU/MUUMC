@@ -13,6 +13,7 @@ const { worldMemory } = require('../memory/world_memory');
 const { reflectionManager } = require('../memory/reflection_manager');
 const { voiceManager } = require('../voice/voice_manager');
 const { voiceBridgeClient } = require('../voice/voice_client');
+const { blueprintLoader, structureBuilder } = require('../builder');
 
 const TOOL_DEFINITIONS = [
   {
@@ -194,6 +195,74 @@ const TOOL_DEFINITIONS = [
       required: ['audio_base64'],
     },
   },
+  {
+    name: 'muu_mc_list_blueprints',
+    description: 'Lists all available 3D blueprints and schematics (.schem, .schematic, .json) with dimensions and Bill of Materials (BOM).',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'muu_mc_design_blueprint',
+    description: 'Designs and persists a new 3D blueprint JSON file into the blueprint library.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name of the blueprint (e.g. "gazebo", "watchtower", "cozy_cabin")' },
+        description: { type: 'string', description: 'Description of the building' },
+        offset: { type: 'number', description: 'Y-axis foundation offset (e.g. -1 to bury floor in ground)' },
+        blocks: {
+          type: 'array',
+          description: '3D array [y][z][x] of block names (e.g. "oak_planks", "glass", "air")',
+        },
+      },
+      required: ['name', 'blocks'],
+    },
+  },
+  {
+    name: 'muu_mc_build_structure',
+    description: 'Autonomous construction of a house or structure from a blueprint or schematic. Clears site, sets up staging chest with materials (Creative mode fulfill), and builds layer-by-layer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        blueprint_name: {
+          type: 'string',
+          description: 'Name of the blueprint to construct (e.g. "small_wood_house", "dirt_shelter", "small_stone_house", "large_house")',
+        },
+        coords: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' },
+            z: { type: 'number' },
+          },
+          description: 'Optional origin coordinates. If omitted, builds 2 blocks in front of the bot.',
+        },
+        rotation: {
+          type: 'number',
+          enum: [0, 90, 180, 270],
+          description: 'Optional rotation degrees (0, 90, 180, or 270). Defaults to 0.',
+        },
+        clear_site: {
+          type: 'boolean',
+          default: true,
+          description: 'Whether to clear vegetation, trees, and obstacles in the footprint before building.',
+        },
+        use_staging_chest: {
+          type: 'boolean',
+          default: true,
+          description: 'Whether to establish a staging supply chest in front of the site.',
+        },
+        creative_fulfill: {
+          type: 'boolean',
+          default: true,
+          description: 'Whether to automatically fulfill required BOM items in Creative mode.',
+        },
+      },
+      required: ['blueprint_name'],
+    },
+  },
 ];
 
 class MCPToolHandler {
@@ -206,6 +275,12 @@ class MCPToolHandler {
 
     try {
       switch (name) {
+        case 'muu_mc_list_blueprints':
+          return await this._handleListBlueprints(args);
+        case 'muu_mc_design_blueprint':
+          return await this._handleDesignBlueprint(args);
+        case 'muu_mc_build_structure':
+          return await this._handleBuildStructure(args);
         case 'muu_mc_play_tts_voice':
           return await this._handlePlayTtsVoice(args);
         case 'muu_mc_execute_task':
@@ -271,6 +346,39 @@ class MCPToolHandler {
 
     // 1. Direct Skill Execution (from LLM Cognitive Planner - 0ms regex overhead)
     if (directAction) {
+      if (directAction === 'design_and_build' || directAction === 'build_structure') {
+        const { structureBuilder, aiArchitect } = require('../builder');
+        const { worldMemory } = require('../memory/world_memory');
+        const serverKey = botClient.getServerIdentifier();
+
+        let bpName = args.params?.blueprint_name;
+        if (!bpName || directAction === 'design_and_build') {
+          const theme = args.params?.theme || 'บ้านพักอบอุ่นพร้อมเตียงนอนและประตูทางเข้า';
+          const designed = await aiArchitect.designBlueprint(theme);
+          bpName = designed.name;
+        }
+
+        logger.info(`🏗️ [Autonomous Engine] Executing '${directAction}' for '${bpName}'...`, 'MCPTools');
+        const buildRes = await structureBuilder.build(botClient, bpName, {
+          clearSite: true,
+          useStagingChest: true,
+          creativeFulfill: args.params?.creative_fulfill !== false,
+        });
+
+        if (buildRes.origin) {
+          worldMemory.setLandmark('MainHouse', buildRes.origin.x, buildRes.origin.y, buildRes.origin.z, `AI Designed Home: ${bpName}`, serverKey);
+          worldMemory.recordAdventureEvent('สร้างบ้านพักสำเร็จ', `สร้างบ้าน ${bpName} เสร็จสมบูรณ์แล้ว`, 'love_eye', serverKey);
+        }
+
+        return {
+          status: 'success',
+          source: 'autonomous_builder',
+          blueprint_name: bpName,
+          placed_count: buildRes.placedCount,
+          message: `สร้างบ้าน '${bpName}' สำเร็จเรียบร้อยแล้ว (${buildRes.placedCount} บล็อก)!`,
+        };
+      }
+
       const directSkill = skillManager.getSkill(directAction);
       if (directSkill) {
         logger.info(`⚡ Direct Action Dispatch: '${directAction}' (Zero Regex Overhead)`, 'MCPTools');
@@ -564,6 +672,58 @@ class MCPToolHandler {
       message: success
         ? 'Voice successfully transmitted to in-game Simple Voice Chat'
         : 'Voice Bridge is not connected to server',
+    };
+  }
+
+  static async _handleListBlueprints(args) {
+    const list = await blueprintLoader.listAll();
+    return {
+      status: 'success',
+      total_blueprints: list.length,
+      blueprints: list,
+    };
+  }
+
+  static async _handleDesignBlueprint(args) {
+    if (!args.name || !args.blocks) {
+      throw new Error('name and blocks (3D array) are required for design_blueprint');
+    }
+    const res = blueprintLoader.saveBlueprint(args.name, args);
+    return {
+      status: 'success',
+      message: `Blueprint '${res.name}' successfully designed and saved to library.`,
+      blueprint_name: res.name,
+      file_path: res.filePath,
+    };
+  }
+
+  static async _handleBuildStructure(args) {
+    if (!args.blueprint_name) {
+      throw new Error('blueprint_name is required for build_structure');
+    }
+
+    if (!botClient.adapter || !botClient.dsl) {
+      logger.info(`Bot is in standby / connecting. Construction task accepted: "${args.blueprint_name}"`, 'MCPTools');
+      return {
+        status: 'mock_success',
+        source: 'standby',
+        blueprint_name: args.blueprint_name,
+        message: `Construction of '${args.blueprint_name}' queued (bot standby).`,
+      };
+    }
+
+    const result = await structureBuilder.build(botClient, args.blueprint_name, {
+      coords: args.coords,
+      rotation: args.rotation || 0,
+      clearSite: args.clear_site !== false,
+      useStagingChest: args.use_staging_chest !== false,
+      creativeFulfill: args.creative_fulfill !== false,
+    });
+
+    return {
+      status: 'success',
+      ...result,
+      message: `Construction of '${result.name}' successfully completed! Placed ${result.placedCount}/${result.totalBlocks} blocks.`,
     };
   }
 }

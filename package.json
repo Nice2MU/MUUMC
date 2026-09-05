@@ -17,6 +17,7 @@
     "mineflayer-collectblock": "^1.6.0",
     "mineflayer-pathfinder": "^2.4.5",
     "mineflayer-pvp": "^1.3.2",
+    "prismarine-schematic": "^1.3.0",
     "prismarine-viewer": "^1.33.0",
     "vec3": "^0.1.10",
     "yaml": "^2.7.0"

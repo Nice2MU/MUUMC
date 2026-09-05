@@ -114,11 +114,51 @@ class DriverAdapter {
             const headBlock = this.getBlockAt(headBlockPos);
             const stepBlock = this.getBlockAt(stepBlockPos);
 
-            const isBreakable = (b) => b && !['air', 'cave_air', 'water', 'flowing_water', 'lava', 'flowing_lava', 'bedrock'].includes(b.name);
+            // Door check: If facing a wooden door, open it rather than digging it!
+            const doorCandidate = (headBlock && headBlock.name.includes('door')) ? headBlock : ((stepBlock && stepBlock.name.includes('door')) ? stepBlock : null);
+            if (doorCandidate && !doorCandidate.name.includes('iron')) {
+              logger.info(`🚪 [Unstuck] Opening closed door '${doorCandidate.name}' to proceed along path...`, 'DriverAdapter');
+              await this.bot.activateBlock(doorCandidate).catch(() => {});
+              await new Promise(r => setTimeout(r, 150));
+              this.bot.setControlState('forward', true);
+              await new Promise(r => setTimeout(r, 450));
+              this.bot.clearControlStates();
+              return;
+            }
 
-            // Break head-level obstacle first (e.g. low leaves, vine, overhang)
+            const isProtectedStructure = (b) => {
+              if (!b) return false;
+              const n = b.name.toLowerCase();
+              return n.includes('plank') || n.includes('log') || n.includes('wood') ||
+                     n.includes('stone') || n.includes('brick') || n.includes('cobble') ||
+                     n.includes('glass') || n.includes('door') || n.includes('trapdoor') ||
+                     n.includes('bed') || n.includes('chest') || n.includes('table') ||
+                     n.includes('furnace') || n.includes('terracotta') || n.includes('concrete') ||
+                     n.includes('slab') || n.includes('stairs') || n.includes('fence') ||
+                     n.includes('wall') || n.includes('lantern') || n.includes('torch');
+            };
+
+            const isBreakable = (b) => {
+              if (!b || ['air', 'cave_air', 'water', 'flowing_water', 'lava', 'flowing_lava', 'bedrock'].includes(b.name)) return false;
+              if (isProtectedStructure(b)) return false; // STRICT: NEVER dig house or structural blocks to unstuck!
+              const n = b.name.toLowerCase();
+              return ['leaves', 'vine', 'grass', 'dirt', 'sand', 'gravel', 'snow'].some(t => n.includes(t));
+            };
+
+            // If obstacle is an unbreakable structural wall, do NOT dig! Side-step around wall!
+            if (!isBreakable(headBlock) && !isBreakable(stepBlock)) {
+              const sideYaw = targetYaw + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+              await this.look(sideYaw, 0);
+              this.bot.setControlState('forward', true);
+              this.bot.setControlState('jump', true);
+              await new Promise(r => setTimeout(r, 400));
+              this.bot.clearControlStates();
+              return;
+            }
+
+            // Break head-level obstacle first (wild foliage/leaves only)
             if (isBreakable(headBlock)) {
-              logger.info(`⛏️ [Unstuck] Breaking head obstacle '${headBlock.name}' to clear path towards target...`, 'DriverAdapter');
+              logger.info(`⛏️ [Unstuck] Clearing wilderness foliage '${headBlock.name}'...`, 'DriverAdapter');
               await this.equipBestTool(headBlock, true).catch(() => {});
               try {
                 await Promise.race([
@@ -128,9 +168,9 @@ class DriverAdapter {
               } catch (_) {}
             }
 
-            // Break foot-level obstacle (e.g. 1-block dirt, leaves, root)
+            // Break foot-level obstacle (wild dirt/leaves only)
             if (isBreakable(stepBlock)) {
-              logger.info(`⛏️ [Unstuck] Breaking foot obstacle '${stepBlock.name}' to clear path towards target...`, 'DriverAdapter');
+              logger.info(`⛏️ [Unstuck] Clearing wilderness obstacle '${stepBlock.name}'...`, 'DriverAdapter');
               await this.equipBestTool(stepBlock, true).catch(() => {});
               try {
                 await Promise.race([
@@ -512,14 +552,45 @@ class DriverAdapter {
     }
   }
 
-  async placeBlock(referenceBlock, faceVector) {
+  _isInteractiveBlock(name) {
+    if (!name) return false;
+    const n = name.toLowerCase().replace(/^minecraft:/, '');
+    return n.includes('chest') || n.includes('barrel') || n.includes('shulker') ||
+           n.includes('furnace') || n.includes('smoker') || n.includes('table') ||
+           n.includes('anvil') || n.includes('hopper') || n.includes('dispenser') ||
+           n.includes('dropper') || n.includes('door') || n.includes('gate') ||
+           n.includes('trapdoor') || n.includes('button') || n.includes('lever') ||
+           n.includes('stand') || n.includes('lectern') || n.includes('jukebox') ||
+           n.includes('bell') || n.includes('anchor');
+  }
+
+  async placeBlock(referenceBlock, faceVector, options = {}) {
     if (!referenceBlock) throw new Error('Reference block for placement is missing.');
     const face = faceVector || new Vec3(0, 1, 0);
+    const isInteractive = this._isInteractiveBlock(referenceBlock.name);
+
+    if (isInteractive && this.bot?.setControlState) {
+      this.bot.setControlState('sneak', true);
+    }
+
     try {
-      await this.bot.placeBlock(referenceBlock, face);
+      if (this.bot?._placeBlockWithOptions) {
+        await this.bot._placeBlockWithOptions(referenceBlock, face, { swingArm: 'right', ...options });
+      } else {
+        await this.bot.placeBlock(referenceBlock, face);
+      }
     } catch (e) {
       if (!e.message.includes('blockUpdate')) {
         throw e;
+      }
+    } finally {
+      if (isInteractive && this.bot?.setControlState) {
+        this.bot.setControlState('sneak', false);
+      }
+      if (this.bot?.currentWindow) {
+        try {
+          this.bot.closeWindow(this.bot.currentWindow);
+        } catch (_) {}
       }
     }
   }

@@ -91,10 +91,20 @@ class SafeDSL {
     let dist = this.adapter.eyeDistanceTo ? this.adapter.eyeDistanceTo(blockPos) : this.adapter.distanceTo(blockPos);
     if (dist > 4.2) {
       const navTimeout = Math.max(3500, Math.min(8000, Math.round(dist * 700)));
-      await this.adapter.gotoXZ(blockPos.x, blockPos.z, 3.4, navTimeout).catch(() => {});
+      const botPos = this.adapter.getPosition ? this.adapter.getPosition() : null;
+      if (botPos && Math.abs(botPos.y - blockPos.y) > 1.8) {
+        await this.adapter.goto(blockPos.x, blockPos.y, blockPos.z, 2.8, navTimeout).catch(() => {});
+      } else {
+        await this.adapter.gotoXZ(blockPos.x, blockPos.z, 3.2, navTimeout).catch(() => {});
+      }
       dist = this.adapter.eyeDistanceTo ? this.adapter.eyeDistanceTo(blockPos) : this.adapter.distanceTo(blockPos);
     }
     // Hard Reach Limit: (Minecraft Vanilla max reach = 4.5m, Mineflayer allows up to 5.1m)
+    if (dist > 4.8) {
+      // 3D approach retry to bring bot close enough
+      await this.adapter.goto(blockPos.x, blockPos.y, blockPos.z, 2.2, 4000).catch(() => {});
+      dist = this.adapter.eyeDistanceTo ? this.adapter.eyeDistanceTo(blockPos) : this.adapter.distanceTo(blockPos);
+    }
     if (dist > 4.8) {
       logger.warn(`Target block at (${blockPos.x}, ${blockPos.y}, ${blockPos.z}) is out of reach (${dist.toFixed(1)}m > 4.8m). Skipping.`, 'SafeDSL');
       return false;
@@ -120,7 +130,12 @@ class SafeDSL {
     if (this.adapter.rawBot && this.adapter.rawBot.blockAtCursor) {
       await this.adapter.lookAt(new Vec3(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5));
       const cursor = this.adapter.rawBot.blockAtCursor(4.5);
-      if (cursor && cursor.position && !cursor.position.equals(blockPos) && cursor.diggable && cursor.name !== 'air' && cursor.name !== 'cave_air' && !cursor.name.includes('water') && !cursor.name.includes('lava') && cursor.name !== 'bedrock') {
+      const isProtected = cursor?.name && (
+        cursor.name.includes('chest') || cursor.name.includes('bed') || cursor.name.includes('door') ||
+        cursor.name.includes('table') || cursor.name.includes('furnace') || cursor.name.includes('planks') ||
+        cursor.name.includes('log') || cursor.name.includes('glass') || cursor.name.includes('torch')
+      );
+      if (cursor && cursor.position && !cursor.position.equals(blockPos) && cursor.diggable && !isProtected && cursor.name !== 'air' && cursor.name !== 'cave_air' && !cursor.name.includes('water') && !cursor.name.includes('lava') && cursor.name !== 'bedrock') {
         logger.info(`⛏️ Clearing obstructing block '${cursor.name}' at (${cursor.position.x}, ${cursor.position.y}, ${cursor.position.z}) in front of target...`, 'SafeDSL');
         await this.adapter.digBlock(cursor);
       }
@@ -268,7 +283,7 @@ class SafeDSL {
   }
 
   // --- Safe Placing ---
-  async safePlaceBlock(referenceBlock, faceVector = new Vec3(0, 1, 0), itemToPlace = null) {
+  async safePlaceBlock(referenceBlock, faceVector = new Vec3(0, 1, 0), itemToPlace = null, options = {}) {
     if (!referenceBlock) throw new Error('Reference block for placement is null.');
     const refPos = referenceBlock.position || referenceBlock;
 
@@ -284,21 +299,123 @@ class SafeDSL {
       return false;
     }
 
-    // 2. Equip item with hand sync delay
-    if (itemToPlace) {
-      await this.adapter.equipItem(itemToPlace, 'hand');
+    // Anti-Crowding Clearance: Ensure bot is not standing in the block placement coordinate or bed volume
+    const targetBlockPos = refPos.plus ? refPos.plus(faceVector) : refPos;
+    const isBed = (itemToPlace || '').toLowerCase().includes('bed');
+    const minSafeDist = isBed ? 1.3 : 1.15;
+    const currentDist = this.adapter.distanceTo(targetBlockPos);
+    if (currentDist < minSafeDist) {
+      const botPos = this.adapter.getPosition();
+      const dx = botPos.x - (targetBlockPos.x + 0.5);
+      const dz = botPos.z - (targetBlockPos.z + 0.5);
+      const len = Math.hypot(dx, dz) || 1;
+      const stepX = targetBlockPos.x + 0.5 + (dx / len) * (minSafeDist + 0.3);
+      const stepZ = targetBlockPos.z + 0.5 + (dz / len) * (minSafeDist + 0.3);
+      await this.adapter.goto(stepX, botPos.y, stepZ, 0.6, 1800).catch(() => {});
+      // Physical fallback if pathfinder is tight: back up 200ms
+      if (this.adapter.distanceTo(targetBlockPos) < 0.9 && this.bot?.setControlState) {
+        this.bot.setControlState('back', true);
+        await new Promise(r => setTimeout(r, 200));
+        this.bot.setControlState('back', false);
+      }
       await new Promise(r => setTimeout(r, 80));
     }
 
-    // 3. Look at reference block center
-    await this.adapter.lookAt(new Vec3(refPos.x + 0.5, refPos.y + 0.5, refPos.z + 0.5));
+    // 2. Equip item with hand sync delay
+    if (itemToPlace) {
+      const cleanTarget = itemToPlace.toLowerCase().replace(/^minecraft:/, '');
+      await this.adapter.equipItem(cleanTarget, 'hand');
+      await new Promise(r => setTimeout(r, 120));
+
+      const held = this.adapter.getHeldItem()?.name?.toLowerCase()?.replace(/^minecraft:/, '');
+      if (held !== cleanTarget && !held?.includes(cleanTarget)) {
+        logger.warn(`safePlaceBlock: Held item '${held}' does not match target '${cleanTarget}'. Skipping placement to prevent build corruption.`, 'SafeDSL');
+        return false;
+      }
+    }
+
+    // 3. Bed Alignment & Orientation: Direct the bed head towards open air space with floor support
+    const placeOptions = { ...options };
+    if (isBed) {
+      // Minecraft Bed Facings & Head Offsets:
+      // yaw = 0 (0 rad) -> North (dz = -1)
+      // yaw = Math.PI (3.14 rad) -> South (dz = +1)
+      // yaw = Math.PI / 2 (1.57 rad) -> West (dx = -1)
+      // yaw = -Math.PI / 2 (-1.57 rad) -> East (dx = +1)
+      const bedOrientations = [
+        { name: 'North', dx: 0, dz: -1, yaw: 0 },
+        { name: 'South', dx: 0, dz: 1, yaw: Math.PI },
+        { name: 'West', dx: -1, dz: 0, yaw: Math.PI / 2 },
+        { name: 'East', dx: 1, dz: 0, yaw: -Math.PI / 2 },
+      ];
+
+      let bestOri = null;
+      for (const ori of bedOrientations) {
+        const headPos = targetBlockPos.offset(ori.dx, 0, ori.dz);
+        const headBlock = this.adapter.getBlockAt(headPos);
+        const headFloor = this.adapter.getBlockAt(headPos.offset(0, -1, 0));
+
+        const isHeadAir = headBlock && (headBlock.name === 'air' || headBlock.name === 'cave_air' || headBlock.name.includes('bed'));
+        const isFloorSolid = headFloor && headFloor.name !== 'air' && !headFloor.name.includes('water') && !headFloor.name.includes('lava');
+
+        if (isHeadAir && isFloorSolid) {
+          bestOri = ori;
+          break;
+        }
+      }
+
+      if (bestOri) {
+        logger.info(`🛏️ [Bed Alignment] Directing bed head towards ${bestOri.name} (yaw: ${bestOri.yaw.toFixed(2)} rad) onto open floor...`, 'SafeDSL');
+
+        // Check if bot intersects the 2-block bed volume (foot or head)
+        const headPos = targetBlockPos.offset(bestOri.dx, 0, bestOri.dz);
+        const botPos = this.adapter.getPosition();
+        const distFoot = Math.hypot(botPos.x - (targetBlockPos.x + 0.5), botPos.z - (targetBlockPos.z + 0.5));
+        const distHead = Math.hypot(botPos.x - (headPos.x + 0.5), botPos.z - (headPos.z + 0.5));
+
+        if (distFoot < 1.1 || distHead < 1.1) {
+          // Find an open side spot next to the bed (perpendicular to head orientation)
+          const perpX = bestOri.dz !== 0 ? 1.3 : 0;
+          const perpZ = bestOri.dx !== 0 ? 1.3 : 0;
+
+          const candidateSpots = [
+            targetBlockPos.offset(perpX, 0, perpZ),
+            targetBlockPos.offset(-perpX, 0, -perpZ),
+            targetBlockPos.offset(-bestOri.dx * 1.3, 0, -bestOri.dz * 1.3),
+          ];
+
+          for (const spot of candidateSpots) {
+            const bAt = this.adapter.getBlockAt(spot);
+            const bFloor = this.adapter.getBlockAt(spot.offset(0, -1, 0));
+            if ((!bAt || bAt.name === 'air' || bAt.name === 'cave_air') && bFloor && bFloor.name !== 'air') {
+              await this.adapter.goto(spot.x + 0.5, botPos.y, spot.z + 0.5, 0.5, 1800).catch(() => {});
+              break;
+            }
+          }
+        }
+
+        // Align exact yaw towards head direction with network transmission (force = false)
+        if (this.bot?.look) {
+          await this.bot.look(bestOri.yaw, -0.65, false);
+          if (this.bot?.waitForTicks) {
+            await this.bot.waitForTicks(3).catch(() => {});
+          } else {
+            await new Promise(r => setTimeout(r, 150));
+          }
+          placeOptions.forceLook = 'ignore';
+        }
+      }
+    } else {
+      // Standard block look at reference face
+      await this.adapter.lookAt(new Vec3(refPos.x + 0.5, refPos.y + 0.5, refPos.z + 0.5));
+    }
 
     // 4. Place block
     try {
       const actualRef = this.adapter.getBlockAt(refPos);
       if (!actualRef || actualRef.name === 'air' || actualRef.name === 'cave_air' || actualRef.name.includes('water') || actualRef.name.includes('lava')) return false;
       logger.info(`🔨 safePlaceBlock invoking adapter.placeBlock on (${actualRef.position.x}, ${actualRef.position.y}, ${actualRef.position.z}) [${actualRef.name}] with held item: ${this.adapter.getHeldItem()?.name}`, 'SafeDSL');
-      await this.adapter.placeBlock(actualRef, faceVector);
+      await this.adapter.placeBlock(actualRef, faceVector, placeOptions);
       logger.info(`🔨 safePlaceBlock placeBlock returned successfully`, 'SafeDSL');
       await new Promise(r => setTimeout(r, 150));
       return true;
@@ -2126,7 +2243,7 @@ class SafeDSL {
   /**
    * Universal fail-proof surface ascension via jump-scaffolding (Pillaring).
    */
-  async pillarUp(targetY = 64) {
+  async pillarToSurface(targetY = 64) {
     logger.info(`🏗️ Pillaring straight up to surface from Y=${Math.round(this.adapter.getPosition().y)} towards target Y=${targetY}...`, 'SafeDSL');
     const rawBot = this.adapter.rawBot;
     if (!rawBot) return { success: false };
@@ -2193,7 +2310,7 @@ class SafeDSL {
     }
 
     // 3. Fallback: Pillar up with jump-scaffolding straight to surface
-    return await this.pillarUp(64);
+    return await this.pillarToSurface(64);
   }
 
   /**

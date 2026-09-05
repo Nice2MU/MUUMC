@@ -72,7 +72,7 @@ class PluginWrappers {
       defaultMove.allowParkour = true; // Enables jumping 1-block steps and gaps smoothly
       defaultMove.allowSprinting = true; // Enables natural sprint-walking
       defaultMove.allow1by1towers = false; // Do not plan 1x1 scaffolding towers when inventory has no blocks
-      defaultMove.canOpenDoors = false; // Avoid desync on non-vanilla doors
+      defaultMove.canOpenDoors = true; // Enable automatic door opening for seamless house navigation
       defaultMove.maxDropDown = 4;
       defaultMove.dontCreateFlow = true;
 

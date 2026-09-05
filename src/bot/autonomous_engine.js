@@ -27,9 +27,12 @@ Goals hierarchy:
 2. Tech Progression: Wood -> Crafting Table -> Wooden Pickaxe -> Stone Tools & Furnace -> Iron Tools & Armor -> Diamond Gear.
 3. Resource Gathering & Smelting: Chop trees for wood/sticks, mine stone/coal/iron, smelt raw ores in furnace, mine diamonds at Y=-54.
 4. Companion Presence & Playmate: Accompany nearby players if present within 24m! If a friendly player is nearby and you have basic tools, choose "follow_player" to hang out, explore together, or assist them.
-5. Exploration: Spelunk caves, explore terrain, build shelter when ready.
+5. Base Building & Settlement: If you do not have a home ("shelter_status.has_home": false) and have gathered basic tools/wood or are in creative mode ("shelter_status.can_build_shelter": true), choose "design_and_build" to autonomously conceptualize and construct your own home!
+6. Exploration: Spelunk caves, explore terrain.
 
 AVAILABLE ACTIONS:
+- "design_and_build": { "theme": "บ้านพักอบอุ่นพร้อมเตียงนอนและประตู" } (AI conceptualizes an original 3D blueprint, stages materials, clears the site, and constructs a home autonomously!)
+- "build_structure": { "blueprint_name": "small_wood_house"|"dirt_shelter"|"large_house" } (Constructs a specific blueprint from the library)
 - "chop_tree": { "count": 2-4 } (Gathers logs, replants saplings)
 - "craft_item": { "item_name": "oak_planks"|"stick"|"crafting_table"|"wooden_pickaxe"|"wooden_axe"|"stone_pickaxe"|"stone_axe"|"stone_sword"|"furnace"|"torch"|"iron_pickaxe"|"iron_sword"|"shield"|"iron_chestplate"|"diamond_pickaxe"|..., "count": 1 }
 - "mine_stone": { "count": 4-8 } (Mines nearby stone/cobblestone directly)
@@ -186,11 +189,13 @@ class AutonomousEngine {
   }
 
   notifyTaskStarted() {
+    this._isTaskActive = true;
     this._lastTaskTime = Date.now();
     this.preempt();
   }
 
   notifyTaskCompleted() {
+    this._isTaskActive = false;
     this._lastTaskTime = Date.now();
     logger.info('✨ Task completed. Muumiu resuming autonomous Cognitive Agent loop...', 'AutonomousEngine');
   }
@@ -534,6 +539,13 @@ class AutonomousEngine {
         recent_milestones: recentDiary.map(d => `[${d.timestamp ? d.timestamp.split('T')[0] : ''}] ${d.title}: ${d.content}`),
         remembered_valuable_ores: rememberedOres.map(o => `${o.name} at (${o.coords.x},${o.coords.y},${o.coords.z})`),
       },
+      shelter_status: {
+        has_home: formattedLandmarks.some(lm => lm.name === 'MainHouse' || lm.name === 'HomeBed'),
+        can_build_shelter: !formattedLandmarks.some(lm => lm.name === 'MainHouse' || lm.name === 'HomeBed') && (
+          (adapter.isCreative && adapter.isCreative()) ||
+          (inventorySummary.tools.length >= 1 && ((inventorySummary.materials['oak_planks'] || 0) + (inventorySummary.materials['cobblestone'] || 0) >= 16 || (inventorySummary.materials['oak_log'] || 0) >= 4))
+        ),
+      },
       recent_actions: this._recentActions.slice(-3),
     };
   }
@@ -831,7 +843,7 @@ Analyze your inventory, surroundings, and recent actions. Choose your next strat
   }
 
   async _tick() {
-    if (!this.isRunning || this.isBusy || this._isPlanning) return;
+    if (!this.isRunning || this.isBusy || this._isPlanning || this._isTaskActive) return;
     if (!this.client.isConnected || !this.client.isSpawned) return;
 
     const adapter = this.client.adapter;
@@ -866,7 +878,7 @@ Analyze your inventory, surroundings, and recent actions. Choose your next strat
   // 🚨 ANTI-STALL & LIVENESS WATCHDOG
   // =========================================================================
   async _runWatchdog() {
-    if (!this.isRunning) return;
+    if (!this.isRunning || this._isTaskActive) return;
     if (!this.client.isConnected || !this.client.isSpawned) return;
 
     const adapter = this.client.adapter;
