@@ -88,32 +88,61 @@ Arguments: ${JSON.stringify(args)}
 Write ONLY the executable Safe DSL JavaScript code:`;
 
     const startTime = Date.now();
+    let usedProvider = this.activeProvider;
+    let usedModel = this.model;
+
     try {
       let rawCode = '';
 
       if (this.activeProvider === 'openrouter') {
-        const response = await axios.post(
-          `${this.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-          {
-            model: this.model,
-            messages: [
-              { role: 'system', content: SYSTEM_PROMPT },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: this.temperature,
-            max_tokens: 300,
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${this.apiKey}`,
-              'HTTP-Referer': 'https://github.com/Nice2MU/MuumiuLLM',
-              'X-Title': 'MuumiuLLM Agent 2',
-              'Content-Type': 'application/json',
+        try {
+          const response = await axios.post(
+            `${this.baseUrl.replace(/\/+$/, '')}/chat/completions`,
+            {
+              model: this.model,
+              messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: userPrompt },
+              ],
+              temperature: this.temperature,
+              max_tokens: 300,
             },
-            timeout: this.timeoutMs,
-          }
-        );
-        rawCode = response.data?.choices?.[0]?.message?.content || '';
+            {
+              headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'HTTP-Referer': 'https://github.com/Nice2MU/MuumiuLLM',
+                'X-Title': 'MuumiuLLM Agent 2',
+                'Content-Type': 'application/json',
+              },
+              timeout: this.timeoutMs,
+            }
+          );
+          rawCode = response.data?.choices?.[0]?.message?.content || '';
+        } catch (openRouterErr) {
+          logger.warn(`⚠️ [AICoder] OpenRouter failed (${openRouterErr.message}). Automatically falling back to local Ollama...`, 'AICoder');
+          const ollamaCfg = this.aiproviderCfg.ollama || {};
+          const ollamaBaseUrl = ollamaCfg.base_url || 'http://127.0.0.1:11434';
+          const ollamaModel = ollamaCfg.model || 'qwen2.5-coder:3b';
+          const fullPrompt = `${SYSTEM_PROMPT}\n\n${userPrompt}`;
+          const response = await axios.post(
+            `${ollamaBaseUrl}/api/generate`,
+            {
+              model: ollamaModel,
+              prompt: fullPrompt,
+              stream: false,
+              options: {
+                num_ctx: ollamaCfg.num_ctx || 8192,
+                num_predict: 128,
+                temperature: this.temperature,
+                stop: ['```\n\n', '</code>'],
+              },
+            },
+            { timeout: this.timeoutMs }
+          );
+          rawCode = response.data?.response || '';
+          usedProvider = 'ollama (fallback)';
+          usedModel = ollamaModel;
+        }
       } else {
         const fullPrompt = `${SYSTEM_PROMPT}\n\n${userPrompt}`;
         const response = await axios.post(
@@ -135,10 +164,10 @@ Write ONLY the executable Safe DSL JavaScript code:`;
       }
 
       const latency = ((Date.now() - startTime) / 1000).toFixed(2);
-      logger.info(`⚡ Agent 2 code generated via ${this.activeProvider} in ${latency}s (${rawCode.length} chars)`, 'AICoder');
+      logger.info(`⚡ Agent 2 code generated via ${usedProvider} [${usedModel}] in ${latency}s (${rawCode.length} chars)`, 'AICoder');
       return rawCode;
     } catch (e) {
-      logger.error(`AI Coder generation failed (${this.activeProvider}): ${e.message}`, 'AICoder');
+      logger.error(`AI Coder generation failed (${usedProvider}): ${e.message}`, 'AICoder');
       throw new Error(`AI Coder generation error: ${e.message}`);
     }
   }

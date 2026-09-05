@@ -33,10 +33,9 @@ async function main() {
   logger.info('🌍 Muumiu spawned in world successfully!', 'BuilderRunner');
   await new Promise(r => setTimeout(r, 2000));
 
-    // 1. Initial Greeting & Clean Inventory
+    // 1. Clean Inventory
     try {
       botClient.bot.chat('/clear');
-      botClient.bot.chat(`สวัสดีค่าคุณไนท์! มูมิวเข้ามาแล้วค่า กำลังจะเริ่มสร้างบ้าน (${bpName}) ให้ดูนะคะ 🔨✨`);
     } catch (_) {}
 
     // 2. Teleport to Player Nice2MU
@@ -105,12 +104,9 @@ async function main() {
       if (p && p.entity) {
         await botClient.adapter.lookAt(p.entity.position).catch(() => {});
       }
-      botClient.bot.chat(`สร้างบ้านเสร็จเรียบร้อยแล้วค่าคุณไนท์! วางไปทั้งหมด ${result.placedCount} บล็อก เชิญเข้าไปชมได้เลยค่า [happy] 🎉🏡`);
+      logger.info(`🎉 Construction finished: ${result.placedCount} blocks placed.`, 'BuilderRunner');
     } catch (err) {
       logger.error(`❌ Build error encountered: ${err.message}\n${err.stack}`, 'BuilderRunner');
-      try {
-        botClient.bot.chat(`มูมิวสร้างติดขัดนิดหน่อยค่า: ${err.message}`);
-      } catch (_) {}
     }
 
     logger.info('✨ Muumiu remains online and active in server. Press Ctrl+C to disconnect.', 'BuilderRunner');

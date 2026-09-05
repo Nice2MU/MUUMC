@@ -367,7 +367,7 @@ class MCPToolHandler {
 
         if (buildRes.origin) {
           worldMemory.setLandmark('MainHouse', buildRes.origin.x, buildRes.origin.y, buildRes.origin.z, `AI Designed Home: ${bpName}`, serverKey);
-          worldMemory.recordAdventureEvent('สร้างบ้านพักสำเร็จ', `สร้างบ้าน ${bpName} เสร็จสมบูรณ์แล้ว`, 'love_eye', serverKey);
+          worldMemory.recordDiaryEvent(serverKey, 'สร้างบ้านพักสำเร็จ', `สร้างบ้าน ${bpName} เสร็จสมบูรณ์แล้ว`, 'love_eye');
         }
 
         return {

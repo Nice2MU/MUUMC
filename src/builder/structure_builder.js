@@ -116,9 +116,7 @@ class StructureBuilder {
         const clean = matName.toLowerCase().trim().replace(/^minecraft:/, '');
         await stagingChestManager.withdrawMaterial(bot, adapter, stagingChestData.chestBlock, clean, Math.min(count, 64));
       }
-      try {
-        bot.chat('มูมิวเบิกวัสดุก่อสร้างจากกล่องเตรียมของเรียบร้อยแล้วค่า พร้อมเริ่มสร้างบ้านแล้วค่ะ! 🔨🧱');
-      } catch (_) {}
+      logger.info('🔨 Materials withdrawn from staging chest. Starting layer construction...', 'StructureBuilder');
     }
 
     // 7. Layer-by-Layer Construction

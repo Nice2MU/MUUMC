@@ -7,7 +7,7 @@ active_provider: "openrouter"
 ollama:
   base_url: "http://127.0.0.1:11434"
   model: "qwen2.5-coder:3b"
-  num_ctx: 16384
+  num_ctx: 8192
   temperature: 0.2
   timeout_ms: 60000
   keep_alive: "1h"
@@ -15,7 +15,7 @@ ollama:
 openrouter:
   api_key: "" # ใส่ OpenRouter API Key หรือปล่อยว่างเพื่อสืบทอดจาก MuumiuLLM
   base_url: "https://openrouter.ai/api/v1"
-  model: "minimax/minimax-m3:free"
+  model: "poolside/laguna-s-2.1:free"
   temperature: 0.2
   max_tokens: 500
   timeout_ms: 60000

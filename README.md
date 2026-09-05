@@ -19,10 +19,10 @@
 - 🧠 **Hierarchical Cognitive Architecture**: Genuine two-tier cognitive system pairing a **Fast-Path Reflex Layer (<50ms)** for instant physical survival (lava clutch, water tread, mob retreat, auto-eat) with a **Slow-Path Cognitive LLM Planner (3–5s)** for multi-turn strategic gameplay and reasoning.
 - 🦾 **Human Arm Reach (4.0m – 4.5m)**: True 3D eye-to-block Euclidean distance (`eyeDistanceTo`). Eliminates artificial 2-block reach limits: mines 1x2 tunnels up to 4 blocks deep (`depth = 4, 3, 2, 1`), digs staircases 2 steps down ahead, and places blocks from natural distance without block-hugging.
 - ⛏️ **Ore Mining Tool Tier Guard**: Dynamic tool requirement resolution via `minecraft-data`. Intercepts attempts to mine gold/diamond with wooden/stone pickaxes, enforcing strict tech progression (Wood ➔ Stone ➔ Iron ➔ Gold/Diamond/Obsidian).
-- 🦘 **Advanced Navigation & Physics Layer**: 3D A* pathfinding coupled with native Step-Assist (1.2m), Vanilla Auto-Jump (impulse raycast), Corner Glancing & Edge Slip (wall slide evasion), Continuous Water Buoyancy, and Smart Wander fallback.
+- 🦘 **Advanced Navigation & Physics Layer**: 3D A* pathfinding coupled with standard Vanilla step-height (0.6m anti-cheat safe), Vanilla Auto-Jump (impulse raycast over 1-block steps during manual walking), Obstacle Clearance & Unstuck excavation, Continuous Water Buoyancy, and Smart Wander fallback.
 - 🛡️ **Hexagonal Driver Adapter (Zero-Breakage Guarantee)**: Decoupling layer between upstream Mineflayer APIs and the AI Coder. Upgrading Mineflayer or switching Minecraft versions never breaks your skill library.
 - ⚡ **Ultra-Fast Skill Cache (<0.1s)**: Repeated common tasks execute from parameterized skill cache in sub-100ms without consuming LLM tokens.
-- 🔒 **Universal Sandbox & 1-Shot Self-Healing**: Safe VM execution with auto-unwrap for Markdown and wrappers, 15s timeout guard, and automatic 1-shot runtime error repair.
+- 🔒 **Universal Sandbox & 1-Shot Self-Healing**: Safe VM execution with auto-unwrap for Markdown and wrappers, configurable step timeout (default 60s, 15s fallback), and automatic 1-shot runtime error repair.
 - 💾 **Two-Tier Atomic Memory**: Multi-world landmark tracking (`landmarks.json`), chest inventories (`chests.json`), and adventure diary indexed by server IP/port with crash-proof atomic writes (`.tmp ➔ rename`).
 - 💬 **In-Game Chat Sanitization & Anti-Kick**: Sanitizes outgoing in-game text (removes newlines, caps at 250 chars) and provides silent DSL execution redirecting internal chatter to structured logs.
 - 🎙️ **Simple Voice Chat & Headless Companion Integration**: Real-time bi-directional voice chat bridge via `MuuVoiceBridge` (port 25570), physical action grounding, and support for the lightweight headless runner (`run_game.sh`).
@@ -53,7 +53,7 @@ flowchart TB
         subgraph EmbeddedAgent2["🧑‍💻 Agent 2: Tactical AI Coder"]
             A2["🤖 AI Coder: qwen2.5-coder:3b (Ollama)<br/>num_ctx: 16K | temp: 0.2 | ~1.0s latency"]
             SkillCache["⚡ Skill Cache Matcher (<0.1s)"]
-            Sandbox["🔒 Universal Sandbox Runner<br/>- Auto-Unwrap Function Wrappers<br/>- 15s Timeout & AbortSignal"]
+            Sandbox["🔒 Universal Sandbox Runner<br/>- Auto-Unwrap Function Wrappers<br/>- Configurable Timeout (60s) & AbortSignal"]
             Debugger["🔧 1-Shot Self-Healing Debugger"]
             A2 <--> Sandbox
             Sandbox <--> Debugger
@@ -68,7 +68,7 @@ flowchart TB
 
         subgraph AdapterLayer["🔌 Hexagonal Driver Adapter & Physics Layer"]
             Adapter["🎮 Driver Adapter (src/driver/adapter.js)<br/>Normalized Bot API & eyeDistanceTo"]
-            Physics["🦘 Custom Physics Engine<br/>- Auto-Jump Impulse Raycaster<br/>- Corner Glancing & Edge Slip<br/>- Water Buoyancy on physicsTick"]
+            Physics["🦘 Custom Physics Engine<br/>- Auto-Jump Impulse Raycaster<br/>- Obstacle Clearance & Unstuck<br/>- Water Buoyancy on physicsTick"]
             Wrappers["📦 Plugin Wrappers (Pathfinder, PvP, Viewer)"]
             Adapter --- Physics
             Adapter --- Wrappers
@@ -98,12 +98,12 @@ flowchart TB
 | **4. Human Arm Reach (4.0m – 4.5m)** | Bot fails digging/placing due to artificial distance limits | [`src/driver/adapter.js`](src/driver/adapter.js) calculates true 3D Euclidean distance via `eyeDistanceTo(block)`. Digs tunnels up to 4 blocks deep and places blocks comfortably from 3.2m – 4.0m without crowding. |
 | **5. Ore Tool Tier Guard** | Punching rare ores (gold/diamond) with stone/hand dropping 0 items | [`src/driver/registry_resolver.js`](src/driver/registry_resolver.js) & [`src/driver/adapter.js`](src/driver/adapter.js) check required tool tiers before mining. Enforces Tech Progression (Wood ➔ Stone ➔ Iron ➔ Diamond). |
 | **6. Strict Stdio Stream Isolation** | Non-JSON log output crashing the MCP transport | `process.stdout.write` filter intercepts non-JSON strings and routes them to `stderr` and `logs/muu_mc.log`. |
-| **7. Step Timeout & 1-Shot Debugger** | Bot freezing or getting stuck | 15s execution timeout via `AbortController`. If an exception occurs, [`src/coder/debugger.js`](src/coder/debugger.js) repairs code in 1-Shot. |
+| **7. Step Timeout & 1-Shot Debugger** | Bot freezing or getting stuck | Configurable execution timeout (default 60s) via `AbortController`. If an exception occurs, [`src/coder/debugger.js`](src/coder/debugger.js) repairs code in 1-Shot. |
 | **8. Two-Tier Atomic Memory** | Memory corruption on sudden disconnects | [`src/memory/world_memory.js`](src/memory/world_memory.js) writes to `.tmp` files before atomic renaming (`fs.renameSync`). |
 
 ---
 
-## 🔌 MCP Tools Reference (7 Tools)
+## 🔌 MCP Tools Reference (12 Tools)
 
 ### 1. `muu_mc_execute_task`
 Instructs the bot to perform an autonomous Minecraft task. Uses Skill Cache for instant execution or writes and tests new JavaScript via Agent 2.
@@ -178,7 +178,7 @@ Returns the catalog of tested, reusable JavaScript skills in the local library.
 ```
 
 ### 7. `muu_mc_manage_memory`
-Inspects landmarks, chest registries, or error reflections.
+Inspects landmarks, chest registries, adventure diaries, player profiles, or error reflections.
 ```json
 {
   "name": "muu_mc_manage_memory",
@@ -188,13 +188,73 @@ Inspects landmarks, chest registries, or error reflections.
 }
 ```
 
+### 8. `muu_mc_get_recent_voice_chats`
+Fetches recent in-game Simple Voice Chat transcriptions, speaker identity, distance, and timestamps.
+```json
+{
+  "name": "muu_mc_get_recent_voice_chats",
+  "arguments": {
+    "limit": 5
+  }
+}
+```
+
+### 9. `muu_mc_play_tts_voice`
+Plays AI synthesized KaoPadTTS audio in-game with 3D positional sound emanating from the bot entity.
+```json
+{
+  "name": "muu_mc_play_tts_voice",
+  "arguments": {
+    "text": "มูมิวพร้อมเดินทางแล้วค่า!",
+    "emotion": "happy"
+  }
+}
+```
+
+### 10. `muu_mc_list_blueprints`
+Lists available architectural blueprints and schematics (`.schem`, `.schematic`, `.json`) with dimensions and Bill of Materials (BOM).
+```json
+{
+  "name": "muu_mc_list_blueprints",
+  "arguments": {}
+}
+```
+
+### 11. `muu_mc_design_blueprint`
+Designs a new 3D architectural blueprint using AI Architect and saves it to the blueprint library.
+```json
+{
+  "name": "muu_mc_design_blueprint",
+  "arguments": {
+    "theme": "บ้านพักอบอุ่นริมน้ำ",
+    "style": "cozy_cottage"
+  }
+}
+```
+
+### 12. `muu_mc_build_structure`
+Autonomously constructs a structure from a blueprint with site preparation, staging supply chest, layer-by-layer placement, and scaffolding cleanup.
+```json
+{
+  "name": "muu_mc_build_structure",
+  "arguments": {
+    "blueprint_name": "small_wood_house",
+    "clear_site": true,
+    "use_staging_chest": true
+  }
+}
+```
+
 ---
 
-## 📡 MCP Resources Reference (3 URIs)
+## 📡 MCP Resources Reference (6 URIs)
 
 - `minecraft://status`: Returns real-time health, food, position, and status in JSON.
 - `minecraft://skills`: Returns all registered skills in the skill library.
 - `minecraft://landmarks`: Returns all saved landmarks for the active server world.
+- `minecraft://chests`: Returns all discovered chest inventories and tracked contents for the active server world.
+- `minecraft://diary`: Returns the episodic adventure diary entries, milestones, and emotional journey.
+- `minecraft://player_profile`: Returns player relationship profiles, interaction memories, and master user data.
 
 ---
 
@@ -221,7 +281,7 @@ assets/mcp/muu-mc/
 │   │   └── autonomous_engine.js         # Idle proactive routines with 0.01s preemption
 │   ├── coder/
 │   │   ├── agent.js                     # Agent 2 brain (Ollama API client)
-│   │   ├── sandbox.js                   # Universal Sandbox with Auto-Unwrap & 15s timeout
+│   │   ├── sandbox.js                   # Universal Sandbox with Auto-Unwrap & Configurable Timeout (60s)
 │   │   ├── debugger.js                  # 1-Shot Self-Healing Error Debugger
 │   │   └── dsl.js                       # Safe DSL Helpers (safeDig, safePlace, chopTree, craft)
 │   ├── memory/
@@ -235,7 +295,7 @@ assets/mcp/muu-mc/
 │       ├── tools.js                     # Handlers for all MCP Tools (including Voice & Chat)
 │       └── resources.js                 # Handlers for MCP Resources
 ├── data/
-│   ├── skills/                          # 5 Starter Skills (follow, collect, craft, defend, sleep)
+│   ├── skills/                          # 23 Starter & Cached Skills (follow, collect, craft, defend, sleep, etc.)
 │   ├── skills_registry.json             # Skill catalog
 │   ├── error_reflection.json            # Error reflection lessons
 │   └── player_safety_rules.json         # No-friendly-fire & safety rules
@@ -345,7 +405,7 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
    - Targets exact block centers (`x+0.5, y+0.5, z+0.5`) without artificial vertical offsets.
    - Digs stone and deepslate in 0.5s–0.9s per block. Requires proximity ($1.8\text{m} - 2.0\text{m}$) before digging to eliminate ghost swings.
 2. **🪵 Persistent Workstation Deployment (`src/coder/dsl.js`)**:
-   - Eliminates the repeated place-and-break cycle on Crafting Tables and Furnaces. Stations remain on the ground and are dynamically reused within 12m.
+   - Eliminates the repeated place-and-break cycle on Crafting Tables and Furnaces. Stations remain on the ground and are dynamically reused within 12m (pack-up operations like `recover_table` or post-smelt furnace collection are preserved for mobile operations).
 3. **💧 Dynamic Aquifer & Lava Avoidance (`src/coder/dsl.js`)**:
    - Detects liquids in front before digging staircase steps and rotates 90° to dry orthogonal stone headings (`+Z`, `-Z`, `-X`) to prevent drowning.
 4. **🗑️ Smart 180° Backward Trash Ejection & Blacklist (`src/driver/adapter.js`)**:
@@ -371,7 +431,7 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
 13. **🚇 Horizontal Strip Mining & Balanced Descent Depths (`src/coder/dsl.js`, `src/bot/autonomous_engine.js`)**:
     - Sets default staircase mining depth to the optimal Iron layer (`Y=16`) instead of plunging to Bedrock (`Y=-54`). Dispatches straight 1x2 Strip Mining tunnels (18 blocks long) and Fishbone (Branch) mining at optimal depth.
 14. **🦘 Vanilla Auto-Jump Leap & Water Buoyancy Engine (`src/driver/plugin_wrappers.js`)**:
-    - Elevates `stepHeight` to `1.2` and applies forward leap velocity (`0.24`) with jump lock during Pathfinder movements to effortlessly scale 1-block steps without collision freezing. Holds continuous buoyancy jump while in water to prevent drowning.
+    - Enforces standard Vanilla `stepHeight = 0.6` (preventing strict server anti-cheat rubberbanding and kicks). Implements Auto-Jump over 1-block steps during manual movement without interfering with Pathfinder A* navigation, and holds continuous buoyancy jump while in water to prevent drowning.
 15. **🎙️ Native Minecraft Plugin Messaging Channel (`muu:voice` on Port 25565)**:
     - Eliminates the need for external secondary ports (25570), additional Playit.gg tunnels, or local firewall port forwarding.
     - All Simple Voice Chat in-game microphone captures and KaoPadTTS playback audio are encapsulated inside Minecraft's native `custom_payload` protocol channel (`muu:voice`) over the standard game connection (port 25565).

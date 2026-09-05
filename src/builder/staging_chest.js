@@ -103,9 +103,6 @@ class StagingChestManager {
     }
 
     logger.info(`✅ Staging chest ready and stocked at (${chestPos.x}, ${chestPos.y}, ${chestPos.z})!`, 'StagingChest');
-    try {
-      bot.chat('มูมิววางกล่องเตรียมของหน้าไซท์งานและเติมของครบตามพิมพ์เขียวเรียบร้อยแล้วค่า! 📦✨');
-    } catch (_) {}
 
     return {
       success: true,
@@ -144,9 +141,6 @@ class StagingChestManager {
       await bot.lookAt(chestBlock.position.offset(0.5, 0.5, 0.5)).catch(() => {});
 
       // Step 3: Open chest
-      try {
-        bot.chat('มูมิวเปิดกล่องเตรียมของและกำลังนำวัสดุตามพิมพ์เขียวใส่ลงในกล่องค่ะ 📦✨');
-      } catch (_) {}
       const chest = await bot.openChest(chestBlock);
       logger.info('📦 Opened staging chest. Depositing construction materials into chest...', 'StagingChest');
       await new Promise(r => setTimeout(r, 250));

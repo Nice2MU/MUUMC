@@ -51,8 +51,8 @@ async function runTests() {
   assert(timedOut === true, 'Sandbox should throw timeout error when exceeding limit');
   logger.info('✅ Test 3 Passed: Step Timeout Guard aborted hanging execution properly.', 'TestPhase2');
 
-  // Test 4: Live Generation via Ollama qwen2.5-coder:3b
-  logger.info('Testing live code generation with local Ollama model qwen2.5-coder:3b...', 'TestPhase2');
+  // Test 4: Live Generation via active AI Provider
+  logger.info(`Testing live code generation with ${aiCoderAgent.activeProvider} model '${aiCoderAgent.model}'...`, 'TestPhase2');
   const taskDesc = 'Eat food if hungry, then check if we have any oak logs';
   const generatedCode = await aiCoderAgent.generateCode(taskDesc, dummyWorld);
   assert(generatedCode && generatedCode.length > 5, 'AI Coder should generate non-empty code');
@@ -71,7 +71,7 @@ async function runTests() {
     },
   });
   assert(liveRunRes.success === true, 'Live generated code executed with 100% syntax validity');
-  logger.info('✅ Test 4 Passed: Live Ollama qwen2.5-coder:3b produced 100% valid executable syntax!', 'TestPhase2');
+  logger.info(`✅ Test 4 Passed: Live ${aiCoderAgent.activeProvider} '${aiCoderAgent.model}' produced 100% valid executable syntax!`, 'TestPhase2');
 
   logger.info('🎉 ALL PHASE 2 TESTS PASSED SUCCESSFULLY! (AI Coder, Sandbox & Debugger ready)', 'TestPhase2');
 }

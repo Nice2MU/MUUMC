@@ -87,12 +87,8 @@ async function main() {
     origin = new Vec3(Math.floor(botPos.x + 3), Math.floor(botPos.y), Math.floor(botPos.z + 3));
   }
 
-  // 4. Announce AI Design in Minecraft Chat
-  try {
-    botClient.bot.chat(`สวัสดีค่าคุณไนท์! มูมิวคิดแบบบ้านเองเรียบร้อยแล้วค่า 🎨✨`);
-    await new Promise(r => setTimeout(r, 1000));
-    botClient.bot.chat(`ชื่อแบบ: '${designed.name}' (${designed.description}) กำลังเริ่มตั้งจุดเสบียงและสร้างให้ชมนะคะ 🔨🏡`);
-  } catch (_) {}
+  // 4. Log AI Design info
+  logger.info(`🎨 AI designed blueprint: '${designed.name}' (${designed.description}). Starting staging and construction...`, 'BuilderRunner');
 
   // 5. Construct AI Structure
   try {
@@ -118,12 +114,9 @@ async function main() {
       await botClient.adapter.lookAt(p.entity.position).catch(() => {});
     }
 
-    botClient.bot.chat(`สร้างบ้านตามแบบที่มูมิวคิดเองเสร็จเรียบร้อยแล้วค่าคุณไนท์! วางไปทั้งหมด ${result.placedCount} บล็อก สวยไหมคะ? [star_eye] 🎉🏡`);
+    logger.info(`🎉 Successfully finished building '${designed.name}'. Placed ${result.placedCount} blocks!`, 'BuilderRunner');
   } catch (err) {
     logger.error(`❌ Build error encountered: ${err.message}\n${err.stack}`, 'BuilderRunner');
-    try {
-      botClient.bot.chat(`มูมิวสร้างติดขัดนิดหน่อยค่า: ${err.message}`);
-    } catch (_) {}
   }
 
   logger.info('✨ Muumiu remains online and active in server. Press Ctrl+C to disconnect.', 'BuilderRunner');

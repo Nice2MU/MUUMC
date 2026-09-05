@@ -90,7 +90,7 @@ CRITICAL RULES:
 7. Keep "thought" concise (1-2 sentences in Thai explaining your strategy).
 8. If "LastDeathPoint" appears in landmarks and you have few tools, you can travel towards it to recover your items!
 9. If inventory has no food and passive animals (chicken, cow, pig) are nearby within 20m, use "hunt_animal" to secure food before going into deep caves!
-10. CHAT ETIQUETTE (CRITICAL): Do NOT chat for routine gameplay actions (chopping wood, mining regular stone, walking, crafting tools, eating). Keep "speech": null!
+10. CHAT ETIQUETTE (CRITICAL): Do NOT chat for routine gameplay actions (chopping wood, building houses/structures, mining regular stone, walking, crafting tools, eating). Keep "speech": null!
 ONLY set "speech" when:
 - Finding something genuinely rare or valuable (e.g. diamonds, netherite, dungeon, temple, village).
 - Critical danger or emergency alert (e.g. creeper ambush, on fire, drowning, critical low HP).
