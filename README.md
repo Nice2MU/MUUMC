@@ -1,6 +1,6 @@
 # 🎮 `muu-mc` — High-Performance Bulletproof Minecraft Java MCP Subsystem
 
-> **Autonomous AI Companion & Tool Subsystem for Minecraft Java Edition (1.16 – 1.21+)**  
+> **Autonomous AI Companion & Tool Subsystem for Minecraft Java Edition (1.16 – 26.1+)**  
 > Powered by [Model Context Protocol (MCP)](https://modelcontextprotocol.io), [Mineflayer v4.38.0](https://github.com/PrismarineJS/mineflayer), and **Dual-Agent Tactical Architecture**.
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
@@ -83,7 +83,7 @@ flowchart TB
         DSL --> Adapter
     end
 
-    AdapterLayer <--> MCServer["🌍 Minecraft Server (Java 1.16 - 1.21+)"]
+    AdapterLayer <--> MCServer["🌍 Minecraft Server (Java 1.16 - 26.1+)"]
 ```
 
 ---
@@ -322,7 +322,7 @@ assets/mcp/muu-mc/
   ```bash
   ollama pull qwen2.5-coder:3b
   ```
-- **Minecraft Server**: Java Edition (1.16 – 1.21+)
+- **Minecraft Server**: Java Edition (1.16 – 26.1+)
 
 ### 2. Installation
 ```bash
@@ -340,7 +340,7 @@ Edit `config/minecraft.yaml` to point to your Minecraft server:
 server:
   host: "127.0.0.1"
   port: 25565
-  version: false # false = auto-detect server version dynamically (1.16 - 1.21+)
+  version: false # false = auto-detect server version dynamically (1.16 - 26.1+)
   auth: "offline" # "offline" or "microsoft"
 
 bot:
