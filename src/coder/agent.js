@@ -37,6 +37,10 @@ Available DSL APIs (via 'dsl' parameter):
 - await dsl.pillarUp(height = 1, blockName = null) : Jump and place blocks under feet (1x1 tower) with microsecond physics synchronization
 - await dsl.placeTorchIfDark() : Automatically places a torch if current area is dark (light <= 7)
 - await dsl.eatIfHungry() : Eats food if hunger is below threshold
+- await dsl.cleanInventory() : Cleans inventory by dropping junk blocks, seeds, and surplus duplicate tools
+- await dsl.discardItems(itemNames) : Discards specified items (or duplicate tools) from inventory to free up slots
+- await dsl.tossItem(itemName, count = 1) : Drops specified item from inventory
+- await dsl.depositSurplusToChest(chestBlock) : Deposits surplus blocks, mob drops, and duplicate tools into a storage chest
 - dsl.chat(message) : Silent log for debugging
 
 Available World APIs (via 'world' parameter):
@@ -61,7 +65,7 @@ CRITICAL RULES:
 
 class AICoderAgent {
   constructor(customConfig = null) {
-    this.aiproviderCfg = config.aiprovider || {};
+    this.aiproviderCfg = config.agent2Provider || config.aiprovider || {};
     this.activeProvider = this.aiproviderCfg.active_provider || 'ollama';
     this.cfg = customConfig || (this.activeProvider === 'openrouter' ? this.aiproviderCfg.openrouter : this.aiproviderCfg.ollama);
     this.baseUrl = this.cfg.base_url || (this.activeProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://127.0.0.1:11434');
@@ -132,7 +136,7 @@ Write ONLY the executable Safe DSL JavaScript code:`;
               stream: false,
               options: {
                 num_ctx: ollamaCfg.num_ctx || 8192,
-                num_predict: 128,
+                num_predict: 512,
                 temperature: this.temperature,
                 stop: ['```\n\n', '</code>'],
               },
@@ -153,7 +157,7 @@ Write ONLY the executable Safe DSL JavaScript code:`;
             stream: false,
             options: {
               num_ctx: this.numCtx,
-              num_predict: 128,
+              num_predict: 512,
               temperature: this.temperature,
               stop: ['```\n\n', '</code>'],
             },

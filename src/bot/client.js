@@ -234,8 +234,13 @@ class MinecraftBotClient {
       const cleanMsg = message.trim();
       logger.info(`💬 In-Game Chat from <${username}>: "${cleanMsg}"`, 'InGameChat');
 
-      // Preempt autonomous engine
-      this.autonomousEngine.preempt();
+      // Preempt autonomous engine or pause for master
+      const lowerUser = username.toLowerCase();
+      if (lowerUser === 'nice2mu' || lowerUser.includes('nice2mu')) {
+        this.autonomousEngine.pauseForMaster(username, cleanMsg);
+      } else {
+        this.autonomousEngine.preempt();
+      }
 
       // Forward to Agent 1 Master Brain via MCP notification
       if (this.mcpServer && typeof this.mcpServer.notification === 'function') {

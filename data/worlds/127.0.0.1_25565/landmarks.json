@@ -1,22 +1,22 @@
 {
-  "LiveTestBase": {
-    "name": "LiveTestBase",
+  "SurfaceSpawn": {
+    "name": "SurfaceSpawn",
     "coords": {
-      "x": 50,
-      "y": 64,
-      "z": 100
+      "x": -43.4,
+      "y": 63,
+      "z": 82.5
     },
-    "description": "ฐานทดสอบระบบ",
-    "updated_at": "2026-08-31T09:44:11.854Z"
+    "description": "จุดเกิดเริ่มต้นบนผิวดิน",
+    "updated_at": "2026-09-06T11:38:03.676Z"
   },
-  "AuditBase": {
-    "name": "AuditBase",
+  "LastDeathPoint": {
+    "name": "LastDeathPoint",
     "coords": {
-      "x": 100,
-      "y": 64,
-      "z": 200
+      "x": 7,
+      "y": 59,
+      "z": 45
     },
-    "description": "ฐานตรวจสอบระบบ",
-    "updated_at": "2026-09-02T16:31:24.339Z"
+    "description": "พิกัดจุดตายล่าสุด เพื่อกลับไปเก็บของ",
+    "updated_at": "2026-09-06T11:39:59.570Z"
   }
 }

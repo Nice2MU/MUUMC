@@ -1,0 +1,94 @@
+{
+  "plan_id": "phase_0_bootstrap",
+  "phase_name": "Phase 0: Day 1 Survival Bootstrap (ตั้งไข่วันแรก)",
+  "description": "รวบรวมไม้ คราฟต์โต๊ะคราฟต์ อุปกรณ์ไม้ ขุดหิน คราฟต์อุปกรณ์หิน และเตรียมอาหาร",
+  "master_player": "Nice2MU",
+  "created_at": "2026-09-06T11:23:29.225Z",
+  "updated_at": "2026-09-06T11:40:28.839Z",
+  "current_step_index": 0,
+  "status": "paused_for_master",
+  "steps": [
+    {
+      "step_id": 1,
+      "title": "ตัดไม้รวบรวมท่อนไม้ 16 ท่อน",
+      "action": "chop_tree",
+      "params": {
+        "count": 4
+      },
+      "target_condition": {
+        "type": "item_count",
+        "item_group": "wood_logs",
+        "target_count": 16
+      },
+      "status": "in_progress",
+      "retries": 0,
+      "started_at": "2026-09-06T11:23:29.225Z",
+      "completed_at": null
+    },
+    {
+      "step_id": 2,
+      "title": "คราฟต์ Crafting Table และ Wooden Pickaxe",
+      "action": "craft_item",
+      "params": {
+        "item_name": "wooden_pickaxe",
+        "count": 1
+      },
+      "target_condition": {
+        "type": "has_items",
+        "items": [
+          "crafting_table",
+          "wooden_pickaxe"
+        ]
+      },
+      "status": "pending",
+      "retries": 0,
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "step_id": 3,
+      "title": "ขุดหิน Cobblestone 14 ก้อน",
+      "action": "mine_stone",
+      "params": {
+        "count": 6
+      },
+      "target_condition": {
+        "type": "item_count",
+        "item_group": "cobblestone_group",
+        "target_count": 14
+      },
+      "status": "pending",
+      "retries": 0,
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "step_id": 4,
+      "title": "คราฟต์ Stone Pickaxe, Stone Axe และ เตาเผา (Furnace)",
+      "action": "craft_item",
+      "params": {
+        "item_name": "stone_pickaxe",
+        "count": 1
+      },
+      "target_condition": {
+        "type": "has_items",
+        "items": [
+          "stone_pickaxe",
+          "stone_axe",
+          "furnace"
+        ]
+      },
+      "status": "pending",
+      "retries": 0,
+      "started_at": null,
+      "completed_at": null
+    }
+  ],
+  "paused_state": {
+    "paused_at": "2026-09-06T11:40:28.839Z",
+    "previous_status": "in_progress",
+    "step_index": 0,
+    "master_order": "Gamerule keep_inventory is now set to: true]",
+    "master_player": "Nice2MU"
+  }
+}

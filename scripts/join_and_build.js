@@ -33,17 +33,6 @@ async function main() {
   logger.info('🌍 Muumiu spawned in world successfully!', 'BuilderRunner');
   await new Promise(r => setTimeout(r, 2000));
 
-    // 1. Clean Inventory
-    try {
-      botClient.bot.chat('/clear');
-    } catch (_) {}
-
-    // 2. Teleport to Player Nice2MU
-    logger.info('Teleporting near Nice2MU...', 'BuilderRunner');
-    try {
-      botClient.bot.chat('/tp Nice2MU');
-      await new Promise(r => setTimeout(r, 1200));
-    } catch (_) {}
     let player = botClient.bot.players['Nice2MU'];
 
     // 3. Determine Build Origin on Solid Ground

@@ -1,0 +1,25 @@
+{
+  "blueprint_name": "ai_cozy_birch_starter_hut",
+  "origin": {
+    "x": -87,
+    "y": 71,
+    "z": 378
+  },
+  "dimensions": {
+    "x": 5,
+    "y": 4,
+    "z": 5
+  },
+  "offset": -1,
+  "placed_blocks": 74,
+  "total_blocks": 84,
+  "missing_materials": {
+    "oak_door": 1,
+    "chest": 1,
+    "red_bed": 1,
+    "glass": 6,
+    "torch": 1
+  },
+  "status": "paused_for_materials",
+  "updated_at": "2026-09-06T07:57:07.236Z"
+}

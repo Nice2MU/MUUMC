@@ -11,13 +11,13 @@ const { worldMemory } = require('../memory/world_memory');
 class InGameChatCompanion {
   constructor(botClient) {
     this.botClient = botClient;
-    this.aiproviderCfg = config.aiprovider || {};
+    this.aiproviderCfg = config.agent1Provider || config.mainAiprovider || config.aiprovider || {};
     this.activeProvider = this.aiproviderCfg.active_provider || 'ollama';
     this.cfg = this.activeProvider === 'openrouter' ? this.aiproviderCfg.openrouter : this.aiproviderCfg.ollama;
-    this.baseUrl = this.cfg.base_url || (this.activeProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://127.0.0.1:11434');
-    this.model = this.cfg.model || (this.activeProvider === 'openrouter' ? 'minimax/minimax-m3:free' : 'qwen2.5-coder:3b');
-    this.apiKey = this.cfg.api_key || '';
-    this.timeoutMs = this.cfg.timeout_ms || 25000;
+    this.baseUrl = this.cfg?.base_url || (this.activeProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://127.0.0.1:11434');
+    this.model = this.cfg?.model || (this.activeProvider === 'openrouter' ? 'minimax/minimax-m3:free' : 'gemma4:cloud');
+    this.apiKey = this.cfg?.api_key || '';
+    this.timeoutMs = (this.cfg?.timeout ? this.cfg.timeout * 1000 : this.cfg?.timeout_ms) || 25000;
   }
 
   async _callLLM(systemPrompt, userPrompt, maxTokens = 60) {

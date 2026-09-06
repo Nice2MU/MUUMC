@@ -1,23 +1,5 @@
 [
   {
-    "id": "err_1788286229440",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T18:10:29.440Z"
-  },
-  {
-    "id": "err_1788286421378",
-    "error_signature": "Cannot mine block: line of sight obstructed",
-    "task_pattern": "mine_block",
-    "failed_code": "await dsl.safeDigBlock(block);",
-    "fix_summary": "Check line-of-sight and step closer before digging",
-    "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
-    "timestamp": "2026-09-01T18:13:41.378Z"
-  },
-  {
     "id": "err_1788286453221",
     "error_signature": "Cannot mine block: line of sight obstructed",
     "task_pattern": "mine_block",
@@ -448,5 +430,23 @@
     "fix_summary": "Check line-of-sight and step closer before digging",
     "repaired_code": "await dsl.navigate(block.x, block.y, block.z, 1.5); await dsl.safeDigBlock(block);",
     "timestamp": "2026-09-04T15:04:45.959Z"
+  },
+  {
+    "id": "err_1788679353865",
+    "error_signature": "destination full",
+    "task_pattern": "มูมิวพยายามปรุงเนื้อไก่แต่ล้มเหลวเพราะใช้ชื่อ 'raw_chicken' ซึ่งใน inventory ระบุว่า 'chicken' มูมิวจะลองใช้ชื่อ 'chicken' เพื่อปรุงอาหารให้เสร็จสิ้นก่อนเดินทางกลับบ้านค่า",
+    "failed_code": "await dsl.smeltItem('chicken', 1);\nawait dsl.goToSurface();",
+    "fix_summary": "Self-healed 1-shot repair",
+    "repaired_code": "await dsl.smeltItem('chicken', 1);\nawait dsl.goToSurface();",
+    "timestamp": "2026-09-06T07:22:33.865Z"
+  },
+  {
+    "id": "err_1788681625654",
+    "error_signature": "Sandbox execution timed out after 60000ms",
+    "task_pattern": "บ้านสร้างไปได้ 88% แล้ว แต่ยังขาดประตู หีบ เตียง กระจก และคบไฟ มูมิวมีไม้ Birch Log 4 บล็อก ซึ่งไม่พอสำหรับคราฟต์ของทั้งหมดนี้ มูมิวจะตัดไม้เพิ่มเพื่อให้มีทรัพยากรเพียงพอในการคราฟต์วัสดุที่เหลือค่ะ",
+    "failed_code": "await dsl.chopTree({ count: 4 });",
+    "fix_summary": "Self-healed 1-shot repair",
+    "repaired_code": "await dsl.chopTree({ count: 4 });",
+    "timestamp": "2026-09-06T08:00:25.654Z"
   }
 ]

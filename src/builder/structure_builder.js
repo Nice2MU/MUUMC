@@ -45,8 +45,11 @@ class StructureBuilder {
       blueprint = blueprintLoader.rotate(blueprint, options.rotation);
     }
 
-    // 3. Determine Origin Position
+    // 3. Determine Origin Position & Active Construction Resume
     const botPos = adapter.getPosition();
+    const serverKey = botClient.worldMemory ? botClient.worldMemory._resolveServerKey() : null;
+    const activeProject = botClient.worldMemory ? botClient.worldMemory.getActiveConstruction(serverKey) : null;
+
     let origin;
     if (options.coords) {
       origin = new Vec3(
@@ -54,14 +57,23 @@ class StructureBuilder {
         Math.floor(options.coords.y),
         Math.floor(options.coords.z)
       );
+    } else if (activeProject && (activeProject.blueprint_name === blueprint.name || options.resume)) {
+      logger.info(`🏗️ [StructureBuilder] Resuming active construction project '${activeProject.blueprint_name}' at (${activeProject.origin.x}, ${activeProject.origin.y}, ${activeProject.origin.z})...`, 'StructureBuilder');
+      origin = new Vec3(activeProject.origin.x, activeProject.origin.y, activeProject.origin.z);
+      options.clearSite = false; // Never re-clear site when resuming an active project
     } else {
       // Default: 2 blocks in front of bot along current heading
       const forwardDir = adapter.getForwardDirection ? adapter.getForwardDirection() : new Vec3(0, 0, 1);
-      origin = new Vec3(
-        Math.floor(botPos.x + forwardDir.x * 2),
-        Math.floor(botPos.y),
-        Math.floor(botPos.z + forwardDir.z * 2)
-      );
+      const targetX = Math.floor(botPos.x + forwardDir.x * 2);
+      const targetZ = Math.floor(botPos.z + forwardDir.z * 2);
+      let targetY = Math.floor(botPos.y);
+      if (adapter.getSurfaceY) {
+        const surfaceY = adapter.getSurfaceY(targetX, targetZ);
+        if (surfaceY >= 62) {
+          targetY = surfaceY;
+        }
+      }
+      origin = new Vec3(targetX, targetY, targetZ);
     }
 
     const dims = blueprint.dimensions;
@@ -77,6 +89,7 @@ class StructureBuilder {
     // 4. Setup Staging Supply Chest & Fulfill Materials (Logistics Staging 5 blocks in front of site)
     let stagingChestData = null;
     if (options.useStagingChest !== false) {
+      const isCreative = options.creativeFulfill === true && bot.game?.gameMode === 'creative';
       stagingChestData = await stagingChestManager.setupStagingChest(
         bot,
         adapter,
@@ -85,7 +98,7 @@ class StructureBuilder {
         dims,
         blueprint.bom,
         {
-          creativeFulfill: options.creativeFulfill !== false,
+          creativeFulfill: isCreative,
           distance: options.stagingDistance || 5,
         }
       );
@@ -93,18 +106,11 @@ class StructureBuilder {
 
     // 5. Site Clearance & Foundation Leveling
     if (options.clearSite !== false) {
+      const isCreative = options.creativeFulfill === true && bot.game?.gameMode === 'creative';
       await sitePreparer.clearAndLevelSite(adapter, dsl, origin.offset(0, offset, 0), dims, {
         foundationBlock: options.foundationBlock || 'dirt',
-        isCreative: options.creativeFulfill !== false,
+        isCreative,
       });
-
-      // Clear inventory clutter from site preparation drops (dirt, seeds, stones)
-      if (options.creativeFulfill !== false && bot.game?.gameMode === 'creative') {
-        try {
-          bot.chat('/clear');
-          await new Promise(r => setTimeout(r, 200));
-        } catch (_) {}
-      }
     }
 
     // 6. Initial Material Withdrawal: Withdraw all required BOM materials from Staging Chest
@@ -121,6 +127,7 @@ class StructureBuilder {
 
     // 7. Layer-by-Layer Construction
     const scaffoldPositions = [];
+    const missingMaterials = {};
     let placedCount = 0;
     const levels = blueprint.blocks || [];
 
@@ -175,8 +182,20 @@ class StructureBuilder {
           await dsl.safeDigBlock(currentBlock);
         }
 
-        // Material Check & Withdrawal from Staging Chest / Creative Conjure
-        await this._ensureMaterialInHand(bot, adapter, stagingChestData?.chestBlock, task.blockName, options.creativeFulfill !== false);
+        // Material Check & Withdrawal from Staging Chest / Creative Conjure (strictly gated to Creative game mode)
+        const hasMat = await this._ensureMaterialInHand(
+          bot,
+          adapter,
+          stagingChestData?.chestBlock,
+          task.blockName,
+          options.creativeFulfill === true && bot.game?.gameMode === 'creative'
+        );
+
+        if (!hasMat && !adapter.hasItem(task.blockName)) {
+          missingMaterials[task.blockName] = (missingMaterials[task.blockName] || 0) + 1;
+          logger.debug(`⚠️ [Survival] Missing material '${task.blockName}' for block at (${targetPos.x}, ${targetPos.y}, ${targetPos.z}). Skipping block to continue legitimately.`, 'StructureBuilder');
+          continue;
+        }
 
         // Distance & Scaffolding Check
         const currentBotPos = adapter.getPosition();
@@ -248,19 +267,19 @@ class StructureBuilder {
             if (tempGround && tempGround.name === 'air') {
               const deepGround = adapter.getBlockAt(targetPos.offset(0, -2, 0));
               if (deepGround && deepGround.name !== 'air') {
-                if (options.creativeFulfill !== false && !adapter.hasItem('dirt')) {
-                  await stagingChestManager._conjureCreativeItem(bot, 'dirt', 16);
-                }
-                await dsl.safePlaceBlock(deepGround, new Vec3(0, 1, 0), 'dirt').catch(() => {});
-                const placedGround = adapter.getBlockAt(targetPos.offset(0, -1, 0));
-                if (placedGround && placedGround.name !== 'air') {
-                  scaffoldPositions.push(targetPos.offset(0, -1, 0));
-                  await dsl.safePlaceBlock(placedGround, new Vec3(0, 1, 0), task.blockName).catch(() => {});
-                  const verifyScaffold = adapter.getBlockAt(targetPos);
-                  if (verifyScaffold && (verifyScaffold.name === task.blockName || verifyScaffold.name.includes(task.blockName))) {
-                    isPlaced = true;
-                    placedCount++;
-                    break;
+                const scaffoldMat = adapter.hasItem('dirt') ? 'dirt' : (adapter.hasItem('cobblestone') ? 'cobblestone' : null);
+                if (scaffoldMat) {
+                  await dsl.safePlaceBlock(deepGround, new Vec3(0, 1, 0), scaffoldMat).catch(() => {});
+                  const placedGround = adapter.getBlockAt(targetPos.offset(0, -1, 0));
+                  if (placedGround && placedGround.name !== 'air') {
+                    scaffoldPositions.push(targetPos.offset(0, -1, 0));
+                    await dsl.safePlaceBlock(placedGround, new Vec3(0, 1, 0), task.blockName).catch(() => {});
+                    const verifyScaffold = adapter.getBlockAt(targetPos);
+                    if (verifyScaffold && (verifyScaffold.name === task.blockName || verifyScaffold.name.includes(task.blockName))) {
+                      isPlaced = true;
+                      placedCount++;
+                      break;
+                    }
                   }
                 }
               }
@@ -368,7 +387,7 @@ class StructureBuilder {
         }
 
         await this._evacuatePlacementZone(bot, adapter, patch.worldPos, patch.blockName);
-        await this._ensureMaterialInHand(bot, adapter, stagingChestData?.chestBlock, patch.blockName, options.creativeFulfill !== false);
+        await this._ensureMaterialInHand(bot, adapter, stagingChestData?.chestBlock, patch.blockName, options.creativeFulfill === true && bot.game?.gameMode === 'creative');
         const placementRef = this._findPlacementReference(adapter, patch.worldPos, patch.blockName);
         if (placementRef) {
           await dsl.safePlaceBlock(placementRef.refBlock, placementRef.faceVector, patch.blockName).catch(() => {});
@@ -388,13 +407,87 @@ class StructureBuilder {
     const frontEntrance = origin.offset(Math.floor(dims.x / 2), 0, -3);
     await adapter.goto(frontEntrance.x, frontEntrance.y, frontEntrance.z, 2.0, 4000).catch(() => {});
 
-    logger.info(`🎉 Successfully completed autonomous construction of '${blueprint.name}'! (${placedCount} blocks placed)`, 'StructureBuilder');
+    // 9. Comprehensive Integrity & Completion Evaluation
+    const remainingMissing = {};
+    let actualPlacedCount = 0;
+
+    for (let y = 0; y < blueprint.blocks.length; y++) {
+      for (let z = 0; z < blueprint.blocks[y].length; z++) {
+        for (let x = 0; x < blueprint.blocks[y][z].length; x++) {
+          const rawName = blueprint.blocks[y][z][x];
+          const blockName = blueprintLoader.normalizeBlockName(rawName);
+          if (!blockName || blockName === 'air') continue;
+
+          const worldPos = origin.offset(x, y + offset, z);
+          const actualBlock = adapter.getBlockAt(worldPos);
+          const matches = actualBlock && (
+            actualBlock.name === blockName ||
+            actualBlock.name.includes(blockName) ||
+            blockName.includes(actualBlock.name) ||
+            (blockName.includes('door') && actualBlock.name.includes('door')) ||
+            (blockName.includes('bed') && actualBlock.name.includes('bed'))
+          );
+
+          if (matches) {
+            actualPlacedCount++;
+          } else {
+            remainingMissing[blockName] = (remainingMissing[blockName] || 0) + 1;
+          }
+        }
+      }
+    }
+
+    const hasMissing = Object.keys(remainingMissing).length > 0;
+    const isCreative = options.creativeFulfill === true && bot.game?.gameMode === 'creative';
+
+    if (hasMissing && !isCreative) {
+      const projectRecord = {
+        blueprint_name: blueprint.name,
+        origin: { x: origin.x, y: origin.y, z: origin.z },
+        dimensions: dims,
+        offset,
+        placed_blocks: actualPlacedCount,
+        total_blocks: blueprint.totalBlocks,
+        missing_materials: remainingMissing,
+        status: 'paused_for_materials',
+      };
+      if (botClient.worldMemory) {
+        botClient.worldMemory.saveActiveConstruction(serverKey, projectRecord);
+        botClient.worldMemory.setLandmark('ActiveConstructionSite', origin.x, origin.y, origin.z, `Active Construction: ${blueprint.name}`, serverKey);
+      }
+
+      logger.info(`⏸️ [StructureBuilder] Paused construction of '${blueprint.name}'! Placed ${actualPlacedCount}/${blueprint.totalBlocks} blocks. Missing materials: ${JSON.stringify(remainingMissing)}. Saved project to memory.`, 'StructureBuilder');
+
+      return {
+        status: 'paused_for_materials',
+        success: false,
+        completed: false,
+        name: blueprint.name,
+        origin: { x: origin.x, y: origin.y, z: origin.z },
+        placedCount: actualPlacedCount,
+        totalBlocks: blueprint.totalBlocks,
+        missingMaterials: remainingMissing,
+        message: `สร้างไปได้แล้ว ${actualPlacedCount}/${blueprint.totalBlocks} บล็อก (พักไว้ชั่วคราวเพื่อไปหาวัสดุเพิ่ม: ${Object.entries(remainingMissing).map(([k, v]) => `${k} x${v}`).join(', ')})`,
+      };
+    }
+
+    // Structure is 100% completed!
+    if (botClient.worldMemory) {
+      botClient.worldMemory.clearActiveConstruction(serverKey);
+      botClient.worldMemory.deleteLandmark(serverKey, 'ActiveConstructionSite');
+      botClient.worldMemory.setLandmark('MainHouse', origin.x, origin.y, origin.z, `AI Designed Home: ${blueprint.name}`, serverKey);
+      botClient.worldMemory.recordDiaryEvent(serverKey, 'สร้างบ้านพักสำเร็จ', `สร้างบ้าน ${blueprint.name} เสร็จสมบูรณ์แล้ว (${actualPlacedCount} บล็อก)`, 'love_eye');
+    }
+
+    logger.info(`🎉 Successfully completed autonomous construction of '${blueprint.name}'! (${actualPlacedCount} blocks placed)`, 'StructureBuilder');
 
     return {
+      status: 'success',
       success: true,
+      completed: true,
       name: blueprint.name,
       origin: { x: origin.x, y: origin.y, z: origin.z },
-      placedCount,
+      placedCount: actualPlacedCount,
       totalBlocks: blueprint.totalBlocks,
       stagingChest: stagingChestData?.chestPos,
     };
@@ -490,8 +583,8 @@ class StructureBuilder {
       if (withdrawn && adapter.hasItem(itemName)) return true;
     }
 
-    // 2. If in creative mode, conjure directly
-    if (isCreative) {
+    // 2. If in creative mode AND explicitly requested, conjure directly
+    if (isCreative === true && bot.game?.gameMode === 'creative') {
       return await stagingChestManager._conjureCreativeItem(bot, itemName, 64);
     }
 

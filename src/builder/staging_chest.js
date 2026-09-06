@@ -21,13 +21,10 @@ class StagingChestManager {
    * @param {Object} options - { creativeFulfill: true }
    */
   async setupStagingChest(bot, adapter, dsl, origin, dimensions, bom, options = {}) {
-    const creativeFulfill = options.creativeFulfill !== undefined ? options.creativeFulfill : true;
+    const isCreative = bot.game?.gameMode === 'creative';
+    const creativeFulfill = options.creativeFulfill === true && isCreative;
 
-    // Pre-conjure chest & dirt in creative mode to prevent inventory shortages
-    if (creativeFulfill) {
-      await this._conjureCreativeItem(bot, 'chest', 4);
-      await this._conjureCreativeItem(bot, 'dirt', 64);
-    }
+    // In survival mode, never conjure items. Only place chest if bot legitimately holds one.
 
     // 1. Calculate staging chest position: 5 blocks in front of the construction site
     const stagingDistance = options.distance !== undefined ? options.distance : 5;
@@ -54,7 +51,7 @@ class StagingChestManager {
       const deep = adapter.getBlockAt(chestPos.offset(0, -1, 0));
       if (deep && deep.name === 'air') {
         const bedrockOrFloor = adapter.getBlockAt(chestPos.offset(0, -2, 0));
-        if (bedrockOrFloor) {
+        if (bedrockOrFloor && adapter.hasItem('dirt')) {
           await dsl.safePlaceBlock(bedrockOrFloor, new Vec3(0, 1, 0), 'dirt').catch(() => {});
         }
       }
@@ -76,7 +73,7 @@ class StagingChestManager {
     let chestBlock = adapter.getBlockAt(chestPos);
     if (!chestBlock || chestBlock.name !== 'chest') {
       const actualGround = adapter.getBlockAt(chestPos.offset(0, -1, 0));
-      if (actualGround && actualGround.name !== 'air') {
+      if (actualGround && actualGround.name !== 'air' && adapter.hasItem('chest')) {
         await dsl.safePlaceBlock(actualGround, new Vec3(0, 1, 0), 'chest');
         await new Promise(r => setTimeout(r, 200));
       }
@@ -164,36 +161,22 @@ class StagingChestManager {
       chest.close();
       logger.info('📦 Staging chest successfully stocked and closed with all construction materials!', 'StagingChest');
 
-      // Clear remaining residue from bot inventory so inventory is completely free for withdrawals
-      if (bot.game?.gameMode === 'creative') {
-        try {
-          bot.chat('/clear');
-          await new Promise(r => setTimeout(r, 200));
-        } catch (_) {}
-      }
     } catch (e) {
       logger.warn(`Notice while stocking chest: ${e.message}`, 'StagingChest');
     }
   }
 
   /**
-   * Conjures an item into bot's inventory using native command or Mineflayer's creative plugin.
+   * Sets inventory slot in Creative mode using Mineflayer's creative plugin (No chat slash commands).
    */
   async _conjureCreativeItem(bot, itemName, count = 64) {
-    const clean = itemName.toLowerCase().trim().replace(/^minecraft:/, '');
-
-    // 1. Try native /give command in Creative mode (handles modern 1.21+ data components natively)
-    if (bot.game?.gameMode === 'creative') {
-      try {
-        bot.chat(`/give @s ${clean} ${count}`);
-        await new Promise(r => setTimeout(r, 150));
-        if (bot.inventory.items().some(i => i.name === clean || i.name.includes(clean))) {
-          return true;
-        }
-      } catch (_) {}
+    if (bot.game?.gameMode !== 'creative') {
+      return false; // Strictly forbidden in Survival mode!
     }
 
-    // 2. Fallback to bot.creative.setInventorySlot
+    const clean = itemName.toLowerCase().trim().replace(/^minecraft:/, '');
+
+    // Fallback to bot.creative.setInventorySlot only in Creative mode
     if (!bot.creative || typeof bot.creative.setInventorySlot !== 'function') {
       logger.debug(`bot.creative not available, skipping creative conjure for ${clean}`, 'StagingChest');
       return false;

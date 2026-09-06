@@ -49,18 +49,6 @@ async function main() {
   botClient.adapter.stopMovement();
   await new Promise(r => setTimeout(r, 1000));
 
-  // Initial Inventory Clearance
-  try {
-    botClient.bot.chat('/clear');
-  } catch (_) {}
-
-  // 3. Teleport near player Nice2MU
-  logger.info('Teleporting near Nice2MU...', 'BuilderRunner');
-  try {
-    botClient.bot.chat('/tp Nice2MU');
-    await new Promise(r => setTimeout(r, 1200));
-  } catch (_) {}
-
   const player = botClient.bot.players['Nice2MU'];
   let origin;
   const botPos = botClient.adapter.getPosition();

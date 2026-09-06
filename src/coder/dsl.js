@@ -192,13 +192,9 @@ class SafeDSL {
         for (const drop of relevantDrops) {
           if (!drop || !drop.position) continue;
           const dropDist = this.adapter.distanceTo(drop.position);
-          if (dropDist > 0.35) {
-            const vacuumTimeout = Math.max(2000, Math.min(5000, Math.round(dropDist * 800)));
-            const reached = await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.35, vacuumTimeout).catch(() => false);
-            if (!reached && drop.isValid) {
-              await this.adapter.unstuck(drop.position);
-              await this.adapter.gotoXZ(drop.position.x, drop.position.z, 0.35, 2000).catch(() => {});
-            }
+          if (dropDist > 1.2) {
+            const vacuumTimeout = Math.max(1500, Math.min(4000, Math.round(dropDist * 600)));
+            await this.adapter.gotoXZ(drop.position.x, drop.position.z, 1.0, vacuumTimeout).catch(() => false);
           }
         }
       } else {
@@ -479,13 +475,21 @@ class SafeDSL {
 
     const logTypes = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'cherry_log', 'mangrove_log'];
     
+    // Check if bot is underground before starting wood harvesting
+    const isUndergroundInitial = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+    if (isUndergroundInitial) {
+      logger.info('🌲 Bot is underground. Navigating up to surface before harvesting trees...', 'SafeDSL');
+      await this.goToSurface();
+    }
+
     for (let i = 0; i < count; i++) {
-      let logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 15 });
-      if (logs.length === 0 && this.adapter.getPosition().y < 62) {
+      const isUnder = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+      if (isUnder) {
         logger.info('🌲 Bot is underground. Navigating up towards surface to reach trees...', 'SafeDSL');
         await this.goToSurface();
-        logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 15 });
       }
+
+      let logs = this.adapter.findBlocks({ matching: logTypes, maxDistance: 64, count: 15 });
 
       if (!this._unreachableTreePositions) this._unreachableTreePositions = new Map();
       const now = Date.now();
@@ -496,6 +500,9 @@ class SafeDSL {
 
       if (logs.length === 0) {
         logger.warn('No reachable trees found within 64 blocks. Exploring terrain to find new trees...', 'SafeDSL');
+        if (this.adapter.isUnderground && this.adapter.isUnderground()) {
+          await this.goToSurface();
+        }
         await this.adapter.exploreTerrain(24).catch(() => {});
         break;
       }
@@ -609,7 +616,10 @@ class SafeDSL {
 
       let requiredPlanks = 2;
       if (clean === 'crafting_table') requiredPlanks = 4;
-      else if (clean === 'chest') requiredPlanks = 8;
+      else if (clean === 'chest') {
+        const hasTable = this.adapter.hasItem('crafting_table') || (this.adapter.findBlocks && this.adapter.findBlocks({ matching: 'crafting_table', maxDistance: 12, count: 1 }).length > 0);
+        requiredPlanks = hasTable ? 8 : 12;
+      }
       else if (clean === 'shield') requiredPlanks = 6;
       else if (clean.includes('bed')) requiredPlanks = 3;
       else if (clean.includes('plank')) requiredPlanks = count;
@@ -617,7 +627,8 @@ class SafeDSL {
 
       if (currentPlanks < requiredPlanks) {
         let hasLog = logTypes.find(l => this.adapter.hasItem(l));
-        if (!hasLog && this.adapter.getPosition().y < 55) {
+        const isUnder = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+        if (!hasLog && isUnder) {
           logger.info('🌲 Missing wood ingredients underground. Navigating to surface to harvest wood...', 'SafeDSL');
           await this.goToSurface();
           await this.chopTree({ count: 4 });
@@ -1529,17 +1540,91 @@ class SafeDSL {
   async depositSurplusToChest(chestBlock) {
     if (!chestBlock) return false;
     const bot = this.adapter.rawBot;
-    await this.adapter.goto(chestBlock.position.x, chestBlock.position.y, chestBlock.position.z, 2.5, 5000);
+    await this.adapter.goto(chestBlock.position.x, chestBlock.position.y, chestBlock.position.z, 2.5, 5000).catch(() => {});
     const chest = await bot.openChest(chestBlock);
-    const junk = ['dirt', 'cobblestone', 'diorite', 'granite', 'andesite', 'gravel', 'rotten_flesh', 'spider_eye', 'string'];
-    for (const j of junk) {
-      const item = bot.inventory.items().find(i => i.name === j && i.count > 16);
-      if (item) {
-        try {
-          await chest.deposit(item.type, null, item.count - 16);
-        } catch (_) {}
+    if (!chest) return false;
+
+    // Categorized surplus disposal:
+    // 1. Junk & Mob Drops (deposit 100%)
+    const junkNames = [
+      'rotten_flesh', 'spider_eye', 'string', 'bone', 'gunpowder',
+      'feather', 'flint', 'wheat_seeds', 'beetroot_seeds', 'pumpkin_seeds', 'melon_seeds',
+      'short_grass', 'tall_grass', 'fern', 'dandelion', 'poppy', 'blue_orchid',
+      'allium', 'azure_bluet', 'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip',
+      'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'sunflower', 'lilac'
+    ];
+
+    // 2. Heavy building blocks: keep max 32 of one primary type, deposit all extra stacks & types
+    const blockNames = [
+      'cobblestone', 'cobbled_deepslate', 'dirt', 'deepslate', 'tuff',
+      'diorite', 'granite', 'andesite', 'gravel', 'sand', 'sandstone'
+    ];
+
+    let keptBlockCount = 0;
+    const maxBlocksToKeep = 32;
+
+    for (const item of bot.inventory.items()) {
+      if (!item) continue;
+
+      // Mob drops & junk -> deposit all
+      if (junkNames.includes(item.name)) {
+        try { await chest.deposit(item.type, null, item.count); } catch (_) {}
+        continue;
+      }
+
+      // Heavy blocks -> keep at most 32 total across all blocks
+      if (blockNames.includes(item.name)) {
+        if (keptBlockCount < maxBlocksToKeep) {
+          const keep = Math.min(item.count, maxBlocksToKeep - keptBlockCount);
+          keptBlockCount += keep;
+          const depositAmount = item.count - keep;
+          if (depositAmount > 0) {
+            try { await chest.deposit(item.type, null, depositAmount); } catch (_) {}
+          }
+        } else {
+          try { await chest.deposit(item.type, null, item.count); } catch (_) {}
+        }
+        continue;
+      }
+
+      // Extra saplings -> keep max 4
+      if (item.name.includes('_sapling')) {
+        if (item.count > 4) {
+          try { await chest.deposit(item.type, null, item.count - 4); } catch (_) {}
+        }
+        continue;
+      }
+
+      // Extra sticks -> keep max 16
+      if (item.name === 'stick') {
+        if (item.count > 16) {
+          try { await chest.deposit(item.type, null, item.count - 16); } catch (_) {}
+        }
+        continue;
       }
     }
+
+    // 3. Duplicate tools: Keep only 2 best pickaxes, 1 best axe, 1 best sword, 1 shovel
+    const allTools = bot.inventory.items().filter(i =>
+      i.name.endsWith('_pickaxe') || i.name.endsWith('_axe') || i.name.endsWith('_sword') || i.name.endsWith('_shovel')
+    );
+    const pickaxes = allTools.filter(i => i.name.endsWith('_pickaxe'));
+    if (pickaxes.length > 2) {
+      const tierRank = { wooden: 1, stone: 2, golden: 3, iron: 4, diamond: 5, netherite: 6 };
+      pickaxes.sort((a, b) => (tierRank[a.name.split('_')[0]] || 0) - (tierRank[b.name.split('_')[0]] || 0));
+      for (let p = 0; p < pickaxes.length - 2; p++) {
+        try { await chest.deposit(pickaxes[p].type, null, 1); } catch (_) {}
+      }
+    }
+
+    const axes = allTools.filter(i => i.name.endsWith('_axe') && !i.name.includes('pickaxe'));
+    if (axes.length > 1) {
+      for (let a = 0; a < axes.length - 1; a++) {
+        try { await chest.deposit(axes[a].type, null, 1); } catch (_) {}
+      }
+    }
+
+    logger.info(`📦 Finished depositing surplus items into chest! Free slots now: ${bot.inventory.emptySlotCount()}`, 'SafeDSL');
 
     // Record chest inventory in worldMemory
     if (this.worldMemory) {
@@ -1561,6 +1646,56 @@ class SafeDSL {
   }
 
   /**
+   * Cleans inventory by purging junk items and surplus duplicate tools/blocks.
+   */
+  async cleanInventory() {
+    return await this.adapter.cleanInventory();
+  }
+
+  /**
+   * Tosses a specific item from inventory.
+   */
+  async tossItem(itemName, count = 1) {
+    if (!this.adapter.rawBot?.inventory) return false;
+    const item = this.adapter.rawBot.inventory.items().find(i => i.name.toLowerCase() === (itemName || '').toLowerCase());
+    if (!item) return false;
+    const tossCount = Math.min(item.count, count || 1);
+    await this.adapter.rawBot.toss(item.type, null, tossCount);
+    await new Promise(r => setTimeout(r, 80));
+    if (this.adapter.rawBot.entities) {
+      for (const e of Object.values(this.adapter.rawBot.entities)) {
+        if (e && (e.name === 'item' || e.name === 'Item' || e.displayName === 'Item') && e.position && this.adapter.distanceTo(e.position) <= 6) {
+          if (this.adapter._tossedTrashIds) this.adapter._tossedTrashIds.add(e.id);
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Discards items by name (or cleans inventory if no arguments passed).
+   */
+  async discardItems(itemNames) {
+    if (Array.isArray(itemNames)) {
+      for (const name of itemNames) {
+        await this.tossItem(name, 64).catch(() => {});
+      }
+    } else if (typeof itemNames === 'string') {
+      await this.tossItem(itemNames, 64).catch(() => {});
+    } else {
+      await this.cleanInventory();
+    }
+    return true;
+  }
+
+  /**
+   * Alias for depositSurplusToChest.
+   */
+  async depositToChest(chestBlock) {
+    return await this.depositSurplusToChest(chestBlock);
+  }
+
+  /**
    * Safely mines a 1x2 diagonal staircase downwards to target depth.
    * Default target depth is Y=16 (optimal Iron Ore level), avoiding digging down to Bedrock (-54) unnecessarily.
    */
@@ -1570,7 +1705,8 @@ class SafeDSL {
     const safeTargetY = Math.max(-54, targetY);
 
     // Auto-record MineEntrance landmark when starting descent from surface
-    if (current && current.y >= 55 && this.worldMemory) {
+    const isUnderCurrent = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+    if (current && current.y >= 66 && !isUnderCurrent && this.worldMemory) {
       const serverKey = this.adapter?.botClient?.getServerIdentifier?.() || null;
       const existing = this.worldMemory.getLandmarks(serverKey);
       if (!existing['MineEntrance']) {
@@ -2181,18 +2317,27 @@ class SafeDSL {
   /**
    * Climbs the excavated staircase tunnel back up to the surface.
    */
-  async climbStaircaseUp(targetY = 64) {
+  async climbStaircaseUp(targetY = null) {
     const current = this.adapter.getPosition();
-    logger.info(`🪜 Climbing staircase back up from Y=${Math.round(current.y)} towards target Y=${targetY}...`, 'SafeDSL');
+    const surfaceY = this.adapter.getSurfaceY ? this.adapter.getSurfaceY() : 64;
+    const finalTargetY = targetY ? Math.max(targetY, surfaceY) : surfaceY;
+    logger.info(`🪜 Climbing staircase back up from Y=${Math.round(current.y)} towards target Y=${finalTargetY}...`, 'SafeDSL');
     const reverseDir = this._staircaseDir ? this._staircaseDir.scaled(-1) : new Vec3(-1, 0, 0);
     let lastY = current.y;
     let stuckSteps = 0;
 
     for (let step = 0; step < 60; step++) {
       const pos = this.adapter.getPosition();
-      if (pos.y >= targetY || pos.y >= 58) {
-        logger.info(`🌲 Reached surface at Y=${Math.round(pos.y)}!`, 'SafeDSL');
-        return { success: true, surfaceY: pos.y };
+      const isUnder = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+      if (!isUnder && pos.y >= finalTargetY - 1) {
+        logger.info(`🌲 Reached surface at Y=${Math.round(pos.y)}! Stepping out onto open ground...`, 'SafeDSL');
+        if (this.adapter.rawBot) {
+          this.adapter.rawBot.setControlState('forward', true);
+          this.adapter.rawBot.setControlState('jump', true);
+          await new Promise(r => setTimeout(r, 450));
+          this.adapter.rawBot.clearControlStates();
+        }
+        return { success: true, surfaceY: this.adapter.getPosition().y };
       }
 
       if (Math.abs(pos.y - lastY) < 0.3) {
@@ -2202,7 +2347,7 @@ class SafeDSL {
           if (this.adapter.rawBot && this.adapter.rawBot.pathfinder) {
             const { goals } = require('mineflayer-pathfinder');
             try {
-              await this.adapter.rawBot.pathfinder.goto(new goals.GoalY(64));
+              await this.adapter.rawBot.pathfinder.goto(new goals.GoalY(finalTargetY));
             } catch (_) {}
           }
           break;
@@ -2216,9 +2361,13 @@ class SafeDSL {
       const targetYCoord = Math.floor(pos.y) + 1;
       const targetZ = Math.floor(pos.z) + reverseDir.z;
 
+      const topHeadBlock = this.adapter.getBlockAt(new Vec3(targetX, targetYCoord + 2, targetZ));
       const headBlock = this.adapter.getBlockAt(new Vec3(targetX, targetYCoord + 1, targetZ));
       const stepBlock = this.adapter.getBlockAt(new Vec3(targetX, targetYCoord, targetZ));
 
+      if (topHeadBlock && topHeadBlock.name !== 'air' && topHeadBlock.name !== 'cave_air' && topHeadBlock.name !== 'torch') {
+        await this.safeDigBlock(topHeadBlock).catch(() => {});
+      }
       if (headBlock && headBlock.name !== 'air' && headBlock.name !== 'cave_air' && headBlock.name !== 'torch') {
         await this.safeDigBlock(headBlock).catch(() => {});
       }
@@ -2237,14 +2386,18 @@ class SafeDSL {
       });
     }
 
-    return { success: this.adapter.getPosition().y >= 58, surfaceY: this.adapter.getPosition().y };
+    const finalPos = this.adapter.getPosition();
+    const finalUnder = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+    return { success: !finalUnder && finalPos.y >= 70, surfaceY: finalPos.y };
   }
 
   /**
    * Universal fail-proof surface ascension via jump-scaffolding (Pillaring).
    */
-  async pillarToSurface(targetY = 64) {
-    logger.info(`🏗️ Pillaring straight up to surface from Y=${Math.round(this.adapter.getPosition().y)} towards target Y=${targetY}...`, 'SafeDSL');
+  async pillarToSurface(targetY = 71) {
+    const surfaceY = this.adapter.getSurfaceY ? this.adapter.getSurfaceY() : targetY;
+    const finalTargetY = Math.max(targetY, surfaceY);
+    logger.info(`🏗️ Pillaring straight up to surface from Y=${Math.round(this.adapter.getPosition().y)} towards target Y=${finalTargetY}...`, 'SafeDSL');
     const rawBot = this.adapter.rawBot;
     if (!rawBot) return { success: false };
 
@@ -2257,12 +2410,19 @@ class SafeDSL {
 
     for (let i = 0; i < 80; i++) {
       const pos = this.adapter.getPosition();
-      if (pos.y >= targetY || pos.y >= 58) {
-        logger.info(`🌲 Reached surface at Y=${Math.round(pos.y)}!`, 'SafeDSL');
-        return { success: true, surfaceY: pos.y };
+      const isUnder = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+      if (!isUnder && pos.y >= finalTargetY) {
+        logger.info(`🌲 Reached surface at Y=${Math.round(pos.y)}! Stepping out onto open ground...`, 'SafeDSL');
+        if (this.adapter.rawBot) {
+          this.adapter.rawBot.setControlState('forward', true);
+          this.adapter.rawBot.setControlState('jump', true);
+          await new Promise(r => setTimeout(r, 450));
+          this.adapter.rawBot.clearControlStates();
+        }
+        return { success: true, surfaceY: this.adapter.getPosition().y };
       }
 
-      // Clear head space
+      // Clear head space (3 blocks up)
       const head1 = this.adapter.getBlockAt(new Vec3(Math.floor(pos.x), Math.floor(pos.y) + 2, Math.floor(pos.z)));
       const head2 = this.adapter.getBlockAt(new Vec3(Math.floor(pos.x), Math.floor(pos.y) + 3, Math.floor(pos.z)));
       if (head1 && head1.name !== 'air' && head1.name !== 'cave_air') {
@@ -2279,7 +2439,9 @@ class SafeDSL {
       }
     }
 
-    return { success: this.adapter.getPosition().y >= 58, surfaceY: this.adapter.getPosition().y };
+    const finalPos = this.adapter.getPosition();
+    const finalUnder = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+    return { success: !finalUnder && finalPos.y >= 70, surfaceY: finalPos.y };
   }
 
   /**
@@ -2287,30 +2449,46 @@ class SafeDSL {
    */
   async goToSurface() {
     const pos = this.adapter.getPosition();
-    if (pos.y >= 58) return { success: true, surfaceY: pos.y };
+    const isUnderground = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+    if (!isUnderground) {
+      return { success: true, surfaceY: pos.y };
+    }
 
-    logger.info(`Navigating to surface from Y=${Math.round(pos.y)}...`, 'SafeDSL');
+    const surfaceY = this.adapter.getSurfaceY ? this.adapter.getSurfaceY() : (pos.y > 62 ? pos.y : 64);
+    const targetSurfaceY = surfaceY;
 
-    // 1. If Surface landmark exists, pathfind to it
+    logger.info(`Navigating to surface from Y=${Math.round(pos.y)} towards target Y=${targetSurfaceY}...`, 'SafeDSL');
+
+    // 1. If Surface landmark exists nearby (<= 80m), pathfind to it
     const landmarks = this.worldMemory ? this.worldMemory.getLandmarks() : {};
-    const surfaceEntry = Object.values(landmarks).find(l => l && (l.coords?.y >= 55 || l.y >= 55));
-    if (surfaceEntry) {
-      const targetCoords = surfaceEntry.coords || surfaceEntry;
-      logger.info(`Following route to surface landmark at (${Math.round(targetCoords.x)}, ${Math.round(targetCoords.y)}, ${Math.round(targetCoords.z)})...`, 'SafeDSL');
-      await this.adapter.goto(targetCoords.x, targetCoords.y, targetCoords.z, 2.0, 8000).catch(() => {});
-      if (this.adapter.getPosition().y >= 55) {
-        return { success: true, surfaceY: this.adapter.getPosition().y };
+    const preferredLandmarks = ['SurfaceSpawn', 'MineEntrance', 'HomeBase', 'MasterHouse'];
+    for (const name of preferredLandmarks) {
+      const lm = landmarks[name];
+      if (lm) {
+        const coords = lm.coords || lm;
+        const dist = Math.hypot(coords.x - pos.x, coords.z - pos.z);
+        if (dist <= 80 && coords.y >= 60) {
+          logger.info(`Following route to nearby surface landmark '${name}' at (${Math.round(coords.x)}, ${Math.round(coords.y)}, ${Math.round(coords.z)})...`, 'SafeDSL');
+          await this.adapter.goto(coords.x, coords.y, coords.z, 2.0, 10000).catch(() => {});
+          const currentPos = this.adapter.getPosition();
+          const stillUnderground = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+          if (!stillUnderground) {
+            return { success: true, surfaceY: currentPos.y };
+          }
+        }
       }
     }
 
     // 2. Climb back up the excavated staircase (-X direction)
-    const stairRes = await this.climbStaircaseUp(64);
-    if (stairRes.success || this.adapter.getPosition().y >= 55) {
-      return stairRes;
+    const stairRes = await this.climbStaircaseUp(targetSurfaceY);
+    const posAfterStair = this.adapter.getPosition();
+    const isUnderAfterStair = this.adapter.isUnderground ? this.adapter.isUnderground() : false;
+    if (!isUnderAfterStair) {
+      return { success: true, surfaceY: posAfterStair.y };
     }
 
     // 3. Fallback: Pillar up with jump-scaffolding straight to surface
-    return await this.pillarToSurface(64);
+    return await this.pillarToSurface(targetSurfaceY);
   }
 
   /**

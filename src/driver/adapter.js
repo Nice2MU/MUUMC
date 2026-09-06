@@ -75,6 +75,49 @@ class DriverAdapter {
     return eyePos.distanceTo(targetCenter);
   }
 
+  isUnderground() {
+    const pos = this.getPosition();
+    if (!pos) return false;
+    if (pos.y < 50) return true; // Deep underground caves or mines
+
+    const bx = Math.floor(pos.x);
+    const bz = Math.floor(pos.z);
+    const by = Math.floor(pos.y);
+
+    // If standing on or near the highest surface ground at this X, Z, we are on the surface
+    const surfaceY = this.getSurfaceY(bx, bz);
+    if (surfaceY && by >= surfaceY - 2) {
+      return false;
+    }
+
+    let solidRoof = 0;
+    for (let dy = 2; dy <= 24; dy++) {
+      const b = this.getBlockAt(new Vec3(bx, by + dy, bz));
+      if (b && ['stone', 'dirt', 'deepslate', 'granite', 'diorite', 'andesite', 'cobblestone', 'sandstone', 'gravel', 'tuff'].includes(b.name)) {
+        solidRoof++;
+        if (solidRoof >= 3) return true;
+      }
+    }
+
+    return false;
+  }
+
+  getSurfaceY(x = null, z = null) {
+    const pos = this.getPosition();
+    const targetX = x !== null ? Math.floor(x) : Math.floor(pos.x);
+    const targetZ = z !== null ? Math.floor(z) : Math.floor(pos.z);
+
+    // Direct scan from top down (Y=100 down to 62) for the highest solid ground block
+    for (let y = 100; y >= 62; y--) {
+      const b = this.getBlockAt(new Vec3(targetX, y, targetZ));
+      if (b && b.name !== 'air' && b.name !== 'cave_air' && !b.name.includes('leaves') && !b.name.includes('log')) {
+        return y + 1; // Safe standing surface on top of this block
+      }
+    }
+
+    return 71;
+  }
+
   // --- Movement & Navigation ---
 
   async unstuck(targetPos = null) {
@@ -696,6 +739,23 @@ class DriverAdapter {
     return this.getInventory();
   }
 
+  getInventorySummary() {
+    const inv = this.getInventory();
+    const materials = {};
+    for (const item of inv) {
+      if (item.name) {
+        materials[item.name] = (materials[item.name] || 0) + item.count;
+      }
+    }
+    return {
+      all_items: inv.map(i => `${i.count}x ${i.name}`),
+      tools: inv.filter(i => i.name.endsWith('_pickaxe') || i.name.endsWith('_axe') || i.name.endsWith('_sword') || i.name.endsWith('_shovel') || i.name === 'shield').map(i => i.name),
+      armor: inv.filter(i => i.name.includes('helmet') || i.name.includes('chestplate') || i.name.includes('leggings') || i.name.includes('boots')).map(i => i.name),
+      materials,
+      raw_items: inv,
+    };
+  }
+
   getHeldItem() {
     return this.bot?.heldItem || null;
   }
@@ -913,6 +973,14 @@ class DriverAdapter {
     }
   }
 
+  countFreeSlots() {
+    if (!this.bot || !this.bot.inventory) return 36;
+    if (typeof this.bot.inventory.emptySlotCount === 'function') {
+      return this.bot.inventory.emptySlotCount();
+    }
+    return 36 - this.bot.inventory.items().length;
+  }
+
   isTossedTrash(entity) {
     if (!entity) return false;
     if (this._tossedTrashIds && this._tossedTrashIds.has(entity.id)) return true;
@@ -924,22 +992,39 @@ class DriverAdapter {
     const junkTypes = [
       'leaf_litter', 'diorite', 'granite', 'andesite', 'tuff', 'gravel',
       'wheat_seeds', 'short_grass', 'flint', 'dripstone_block', 'pointed_dripstone',
-      'oak_sapling', 'birch_sapling', 'spruce_sapling', 'rotten_flesh', 'poisonous_potato'
+      'oak_sapling', 'birch_sapling', 'spruce_sapling', 'rotten_flesh', 'poisonous_potato',
+      'feather', 'spider_eye', 'bone'
     ];
     if (!this._tossedTrashIds) this._tossedTrashIds = new Set();
 
     const items = this.bot.inventory.items();
     const hasJunk = items.some(i => junkTypes.includes(i.name.toLowerCase()));
-    const hasExcessBlocks = ['cobblestone', 'cobbled_deepslate', 'dirt', 'raw_copper'].some(name => this.countItem(name) > 32);
+    const blockCaps = {
+      'cobblestone': 32,
+      'cobbled_deepslate': 32,
+      'dirt': 32,
+      'diorite': 16,
+      'granite': 16,
+      'andesite': 16,
+      'tuff': 16,
+      'gravel': 16,
+      'sand': 16,
+      'raw_copper': 32
+    };
+    const hasExcessBlocks = Object.entries(blockCaps).some(([name, maxKeep]) => this.countItem(name) > maxKeep);
+    const pickaxes = items.filter(i => i.name.endsWith('pickaxe'));
+    const hasDuplicatePicks = pickaxes.length > 2;
 
-    if (!hasJunk && !hasExcessBlocks) return;
+    if (!hasJunk && !hasExcessBlocks && !hasDuplicatePicks && this.countFreeSlots() > 4) return;
+
+    logger.info(`🧹 Starting cleanInventory (free_slots: ${this.countFreeSlots()})...`, 'DriverAdapter');
 
     // 1. Turn 180 degrees backward and aim slightly down to throw behind the path of travel!
     const originalYaw = this.bot.entity.yaw;
     const originalPitch = this.bot.entity.pitch;
     await this.bot.look(originalYaw + Math.PI, 0.4, true).catch(() => {});
 
-    // 2. Toss explicit junk blocks & seeds
+    // 2. Toss explicit junk blocks, mob drops & seeds
     for (const item of this.bot.inventory.items()) {
       const name = item.name.toLowerCase();
       if (junkTypes.includes(name)) {
@@ -951,38 +1036,84 @@ class DriverAdapter {
       }
     }
 
-    // 3. Discard obsolete duplicate tools
-    const hasHigherPick = this.hasItem('iron_pickaxe') || this.hasItem('stone_pickaxe');
-    const hasHigherSword = this.hasItem('iron_sword') || this.hasItem('stone_sword');
-    const hasHigherAxe = this.hasItem('iron_axe') || this.hasItem('stone_axe');
+    // 3. Discard obsolete & excessive duplicate tools
+    const toolTierScore = (name) => {
+      if (name.includes('netherite')) return 6;
+      if (name.includes('diamond')) return 5;
+      if (name.includes('iron')) return 4;
+      if (name.includes('golden')) return 3;
+      if (name.includes('stone')) return 2;
+      if (name.includes('wooden')) return 1;
+      return 0;
+    };
 
-    for (const item of this.bot.inventory.items()) {
-      if (item.name === 'wooden_pickaxe' && hasHigherPick) {
-        await this.bot.toss(item.type, null, item.count).catch(() => {});
-      } else if (item.name === 'wooden_sword' && hasHigherSword) {
-        await this.bot.toss(item.type, null, item.count).catch(() => {});
-      } else if (item.name === 'wooden_axe' && hasHigherAxe) {
-        await this.bot.toss(item.type, null, item.count).catch(() => {});
+    // Pickaxes: keep at most 2 best pickaxes
+    const allPicks = this.bot.inventory.items().filter(i => i.name.endsWith('pickaxe'));
+    if (allPicks.length > 2) {
+      allPicks.sort((a, b) => toolTierScore(b.name) - toolTierScore(a.name));
+      for (const item of allPicks.slice(2)) {
+        try {
+          await this.bot.toss(item.type, null, item.count);
+          logger.info(`🗑️ Tossed surplus pickaxe ${item.name} behind player.`, 'DriverAdapter');
+          await new Promise(r => setTimeout(r, 60));
+        } catch (_) {}
       }
     }
 
-    // 4. Cap construction blocks (keep max 32 to prevent inventory choking)
-    const blockCaps = {
-      'cobblestone': 32,
-      'cobbled_deepslate': 32,
-      'dirt': 32,
-      'raw_copper': 32
-    };
+    // Axes: keep at most 1 best axe
+    const allAxes = this.bot.inventory.items().filter(i => i.name.endsWith('_axe') && !i.name.endsWith('pickaxe'));
+    if (allAxes.length > 1) {
+      allAxes.sort((a, b) => toolTierScore(b.name) - toolTierScore(a.name));
+      for (const item of allAxes.slice(1)) {
+        try {
+          await this.bot.toss(item.type, null, item.count);
+          logger.info(`🗑️ Tossed surplus axe ${item.name} behind player.`, 'DriverAdapter');
+          await new Promise(r => setTimeout(r, 60));
+        } catch (_) {}
+      }
+    }
 
+    // Swords: keep at most 1 best sword
+    const allSwords = this.bot.inventory.items().filter(i => i.name.endsWith('_sword'));
+    if (allSwords.length > 1) {
+      allSwords.sort((a, b) => toolTierScore(b.name) - toolTierScore(a.name));
+      for (const item of allSwords.slice(1)) {
+        try {
+          await this.bot.toss(item.type, null, item.count);
+          logger.info(`🗑️ Tossed surplus sword ${item.name} behind player.`, 'DriverAdapter');
+          await new Promise(r => setTimeout(r, 60));
+        } catch (_) {}
+      }
+    }
+
+    // Shovels: keep at most 1 best shovel
+    const allShovels = this.bot.inventory.items().filter(i => i.name.endsWith('_shovel'));
+    if (allShovels.length > 1) {
+      allShovels.sort((a, b) => toolTierScore(b.name) - toolTierScore(a.name));
+      for (const item of allShovels.slice(1)) {
+        try {
+          await this.bot.toss(item.type, null, item.count);
+          logger.info(`🗑️ Tossed surplus shovel ${item.name} behind player.`, 'DriverAdapter');
+          await new Promise(r => setTimeout(r, 60));
+        } catch (_) {}
+      }
+    }
+
+    // 4. Cap construction blocks across all inventory stacks
     for (const [bName, maxKeep] of Object.entries(blockCaps)) {
       let currentTotal = this.countItem(bName);
       if (currentTotal > maxKeep) {
-        const excess = currentTotal - maxKeep;
-        const targetItem = this.bot.inventory.items().find(i => i.name.toLowerCase() === bName);
-        if (targetItem) {
-          const tossCount = Math.min(targetItem.count, excess);
-          await this.bot.toss(targetItem.type, null, tossCount).catch(() => {});
-          logger.info(`🗑️ Tossed excess ${tossCount}x ${bName} behind player (capped at ${maxKeep}).`, 'DriverAdapter');
+        let excessToToss = currentTotal - maxKeep;
+        for (const item of this.bot.inventory.items()) {
+          if (item.name.toLowerCase() === bName && excessToToss > 0) {
+            const tossCount = Math.min(item.count, excessToToss);
+            try {
+              await this.bot.toss(item.type, null, tossCount);
+              excessToToss -= tossCount;
+              logger.info(`🗑️ Tossed excess ${tossCount}x ${bName} behind player (capped at ${maxKeep}).`, 'DriverAdapter');
+              await new Promise(r => setTimeout(r, 60));
+            } catch (_) {}
+          }
         }
       }
     }
@@ -991,7 +1122,7 @@ class DriverAdapter {
     await new Promise(r => setTimeout(r, 120));
     if (this.bot.entities) {
       for (const e of Object.values(this.bot.entities)) {
-        if (e && (e.name === 'item' || e.name === 'Item' || e.displayName === 'Item') && e.position && this.distanceTo(e.position) <= 5) {
+        if (e && (e.name === 'item' || e.name === 'Item' || e.displayName === 'Item') && e.position && this.distanceTo(e.position) <= 6) {
           this._tossedTrashIds.add(e.id);
         }
       }
@@ -1001,6 +1132,7 @@ class DriverAdapter {
     await this.bot.look(originalYaw, originalPitch, true).catch(() => {});
     const forwardPos = this.getPosition().offset(Math.sin(-originalYaw) * 1.5, 0, Math.cos(-originalYaw) * 1.5);
     await this.goto(forwardPos.x, forwardPos.y, forwardPos.z, 0.5, 1200).catch(() => {});
+    logger.info(`🧹 cleanInventory complete! Free slots now: ${this.countFreeSlots()}`, 'DriverAdapter');
   }
 
   // --- Containers & Sleep ---
@@ -1397,6 +1529,12 @@ class DriverAdapter {
   }
 
   async exploreTerrain(radius = 24, timeoutMs = 12000) {
+    if (this.isUnderground()) {
+      logger.info('🗺️ [Explorer] Bot is underground. Ascending to surface before exploring terrain...', 'DriverAdapter');
+      if (this.botClient && this.botClient.dsl) {
+        await this.botClient.dsl.goToSurface();
+      }
+    }
     const pos = this.getPosition();
     for (let attempt = 0; attempt < 3; attempt++) {
       const angle = Math.random() * Math.PI * 2;

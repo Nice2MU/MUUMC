@@ -21,20 +21,9 @@ class SitePreparer {
    */
   async clearAndLevelSite(adapter, dsl, origin, dimensions, options = {}) {
     const { x: width, y: height, z: length } = dimensions;
-    const foundationBlock = options.foundationBlock || 'dirt';
-    const isCreative = options.isCreative !== undefined ? options.isCreative : true;
+    const isCreative = options.isCreative === true && adapter.bot?.game?.gameMode === 'creative';
 
-    logger.info(`🚜 Preparing construction site at (${origin.x}, ${origin.y}, ${origin.z}) [${width}x${height}x${length}]...`, 'SitePreparer');
-
-    if (isCreative && adapter.bot) {
-      if (!adapter.hasItem('diamond_pickaxe')) {
-        adapter.bot.chat('/give @s diamond_pickaxe 1');
-      }
-      if (!adapter.hasItem('diamond_shovel')) {
-        adapter.bot.chat('/give @s diamond_shovel 1');
-      }
-      await new Promise(r => setTimeout(r, 250));
-    }
+    logger.info(`🚜 Preparing construction site at (${origin.x}, ${origin.y}, ${origin.z}) [${width}x${height}x${length}] (Survival Legitimate)...`, 'SitePreparer');
 
     let clearedCount = 0;
     let leveledCount = 0;
@@ -53,18 +42,13 @@ class SitePreparer {
           // Do not break indestructible blocks (bedrock)
           if (block.name === 'bedrock') continue;
 
-          // Check distance & approach if too far
-          const dist = adapter.eyeDistanceTo ? adapter.eyeDistanceTo(targetPos) : adapter.distanceTo(targetPos);
-          if (dist > 3.8) {
-            const currentBotY = adapter.getPosition().y;
-            await adapter.goto(targetPos.x, currentBotY, targetPos.z, 2.5, 3000).catch(() => {});
-          }
+          // Let safeDigBlock handle optimal 3D approach and auto-tool equipping
 
           try {
             const currentBlock = adapter.getBlockAt(targetPos);
             if (currentBlock && currentBlock.name !== 'air') {
               logger.debug(`Clearing obstacle '${currentBlock.name}' at (${targetPos.x}, ${targetPos.y}, ${targetPos.z})`, 'SitePreparer');
-              await dsl.safeDigBlock(currentBlock, { autoSwitchTool: true });
+              await dsl.safeDigBlock(currentBlock, { autoSwitchTool: true, skipVacuum: true });
               clearedCount++;
             }
           } catch (e) {
@@ -90,11 +74,11 @@ class SitePreparer {
             }
 
             try {
-              if (isCreative && !adapter.hasItem(foundationBlock)) {
-                await stagingChestManager._conjureCreativeItem(adapter.rawBot, foundationBlock, 64);
+              const availableFoundation = adapter.hasItem('dirt') ? 'dirt' : (adapter.hasItem('cobblestone') ? 'cobblestone' : (adapter.hasItem('stone') ? 'stone' : null));
+              if (availableFoundation) {
+                await dsl.safePlaceBlock(below, new Vec3(0, 1, 0), availableFoundation).catch(() => {});
+                leveledCount++;
               }
-              await dsl.safePlaceBlock(below, new Vec3(0, 1, 0), foundationBlock).catch(() => {});
-              leveledCount++;
             } catch (err) {
               logger.debug(`Notice leveling foundation at (${floorPos.x}, ${floorPos.y}, ${floorPos.z}): ${err.message}`, 'SitePreparer');
             }

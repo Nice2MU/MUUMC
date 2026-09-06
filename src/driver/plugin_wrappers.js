@@ -68,7 +68,8 @@ class PluginWrappers {
     if (!bot._pathfinderLoaded || !bot._MovementsClass || !mcData) return null;
     try {
       const defaultMove = new bot._MovementsClass(bot, mcData);
-      defaultMove.canDig = false; // Surface and general travel should navigate cleanly without punching trees or dirt with fists
+      defaultMove.canDig = true; // Enables climbing natural steep slopes and digging out of trenches
+      defaultMove.digCost = 15; // High cost ensures it prefers walking around obstacles when possible
       defaultMove.allowParkour = true; // Enables jumping 1-block steps and gaps smoothly
       defaultMove.allowSprinting = true; // Enables natural sprint-walking
       defaultMove.allow1by1towers = false; // Do not plan 1x1 scaffolding towers when inventory has no blocks

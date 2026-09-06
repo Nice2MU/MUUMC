@@ -76,12 +76,12 @@ CRITICAL: Return ONLY valid JSON. No conversational text, no markdown formatting
 
 class AIArchitect {
   constructor() {
-    this.aiproviderCfg = config.aiprovider || {};
+    this.aiproviderCfg = config.agent1Provider || config.mainAiprovider || config.aiprovider || {};
     this.activeProvider = this.aiproviderCfg.active_provider || 'ollama';
     this.cfg = this.activeProvider === 'openrouter' ? this.aiproviderCfg.openrouter : this.aiproviderCfg.ollama;
     this.baseUrl = this.cfg?.base_url || 'http://127.0.0.1:11434';
-    this.model = this.cfg?.model || 'gemma4:cloud';
-    this.timeoutMs = this.cfg?.timeout_ms || 45000;
+    this.model = this.cfg?.model || (this.activeProvider === 'openrouter' ? 'minimax/minimax-m3:free' : 'gemma4:cloud');
+    this.timeoutMs = (this.cfg?.timeout ? this.cfg.timeout * 1000 : this.cfg?.timeout_ms) || 45000;
   }
 
   /**
@@ -110,7 +110,7 @@ class AIArchitect {
 
     if (!blueprintData || !blueprintData.blocks || blueprintData.blocks.length === 0) {
       logger.info(`🎨 [AI Architect] Synthesizing procedural architectural design for '${theme}'...`, 'AIArchitect');
-      blueprintData = this._generateProceduralDesign(theme);
+      blueprintData = this._generateProceduralDesign(theme, options);
     }
 
     // 3. Save Blueprint to library
@@ -134,7 +134,18 @@ class AIArchitect {
    * Queries LLM for 3D blueprint JSON.
    */
   async _queryLLM(theme, options = {}) {
-    const userPrompt = `Design a unique, beautiful Minecraft structure based on this concept: "${theme}".
+    let materialInstructions = '';
+    if (options.availableMaterials && Object.keys(options.availableMaterials).length > 0) {
+      materialInstructions = `
+CRITICAL SURVIVAL RESOURCE CONSTRAINT:
+The bot currently carries these materials in inventory: ${JSON.stringify(options.availableMaterials)}.
+- Design the structure to PRIMARILY utilize these exact building materials!
+- If the bot possesses mostly oak_planks and cobblestone, use oak_planks for walls/floors and cobblestone for foundation/pillars.
+- Scale: ${options.scale || 'compact starter home'} (Keep total block count realistic for this inventory, around 35-65 blocks).
+- Do NOT require exotic blocks (such as stone_bricks, quartz, terracotta, or prismarine) unless they are in inventory.`;
+    }
+
+    const userPrompt = `Design a unique, beautiful Minecraft structure based on this concept: "${theme}".${materialInstructions}
 MANDATORY: You MUST include an "oak_door" at the front exterior wall (z=0, center x) on Layer 1 so players and bots can enter! On Layer 2 directly above the door, put "air" or "oak_door".
 Output strictly valid JSON with keys: name, description, offset (-1), blocks (3D array [y][z][x]).`;
 
@@ -390,10 +401,19 @@ Output strictly valid JSON with keys: name, description, offset (-1), blocks (3D
   }
 
   /**
-   * Generates a high-quality procedural architectural design.
+   * Generates a high-quality procedural architectural design tailored to available materials.
    */
-  _generateProceduralDesign(theme) {
+  _generateProceduralDesign(theme, options = {}) {
     const timestamp = Date.now().toString().slice(-4);
+    const mats = options.availableMaterials || {};
+
+    // Intelligently select available materials from inventory
+    const wallPlank = (mats['spruce_planks'] >= 10) ? 'spruce_planks'
+      : ((mats['birch_planks'] >= 10) ? 'birch_planks' : 'oak_planks');
+    const pillarLog = (mats['birch_log'] >= 4) ? 'birch_log'
+      : ((mats['spruce_log'] >= 4) ? 'spruce_log' : 'oak_log');
+    const foundationBlock = (mats['cobblestone'] >= 8) ? 'cobblestone'
+      : ((mats['stone'] >= 8) ? 'stone' : wallPlank);
 
     if (theme.includes('stone') || theme.includes('tower') || theme.includes('หอ')) {
       // 5x5 Stone Watchtower
@@ -404,11 +424,11 @@ Output strictly valid JSON with keys: name, description, offset (-1), blocks (3D
         blocks: [
           // Y=0: Foundation
           [
-            ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'],
-            ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'],
-            ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'],
-            ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'],
-            ['cobblestone', 'cobblestone', 'cobblestone', 'cobblestone', 'cobblestone'],
+            [foundationBlock, foundationBlock, foundationBlock, foundationBlock, foundationBlock],
+            [foundationBlock, foundationBlock, foundationBlock, foundationBlock, foundationBlock],
+            [foundationBlock, foundationBlock, foundationBlock, foundationBlock, foundationBlock],
+            [foundationBlock, foundationBlock, foundationBlock, foundationBlock, foundationBlock],
+            [foundationBlock, foundationBlock, foundationBlock, foundationBlock, foundationBlock],
           ],
           // Y=1: Lower walls & door
           [

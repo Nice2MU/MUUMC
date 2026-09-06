@@ -12,6 +12,7 @@ logs/
 # Temporary and Cache files
 data/auth_cache/
 data/worlds/**/.tmp*
+data/skills/healed_*.js
 *.tmp
 
 # OS files

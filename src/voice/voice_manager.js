@@ -28,6 +28,17 @@ class VoiceManager {
       'VoiceManager'
     );
 
+    // Pause autonomous plan for Master Nice2MU
+    try {
+      const { botClient } = require('../bot/client');
+      if (botClient && botClient.autonomousEngine) {
+        const lowerName = playerName.toLowerCase();
+        if (lowerName === 'nice2mu' || lowerName.includes('nice2mu')) {
+          botClient.autonomousEngine.pauseForMaster(playerName, 'In-Game Voice Utterance');
+        }
+      }
+    } catch (_) {}
+
     // Capture real-time in-game telemetry so Agent 1 knows exactly what Muumiu is doing
     let gameContext = null;
     try {

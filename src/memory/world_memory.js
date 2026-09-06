@@ -152,6 +152,40 @@ class WorldMemoryManager {
     return nearest;
   }
 
+  getHomeBase(serverKey) {
+    const landmarks = this.getLandmarks(serverKey);
+    return landmarks['HomeBase'] || null;
+  }
+
+  setHomeBase(serverKey, coords, anchors = {}, description = '') {
+    const resolvedKey = this._resolveServerKey(serverKey);
+    const filePath = path.join(this._getWorldDir(resolvedKey), 'landmarks.json');
+    const landmarks = this.getLandmarks(resolvedKey);
+    landmarks['HomeBase'] = {
+      name: 'HomeBase',
+      coords: {
+        x: Math.round(coords.x * 10) / 10,
+        y: Math.round(coords.y * 10) / 10,
+        z: Math.round(coords.z * 10) / 10,
+      },
+      anchors: anchors || {},
+      description: description || 'ฐานปฏิบัติการหลักของมูมิว ข้างบ้านคุณ Nice2MU',
+      updated_at: new Date().toISOString(),
+    };
+    this._writeAtomicJson(filePath, landmarks);
+    logger.info(`🏡 [WorldMemory] Saved HomeBase at (${landmarks['HomeBase'].coords.x}, ${landmarks['HomeBase'].coords.y}, ${landmarks['HomeBase'].coords.z}) for server [${resolvedKey}]`, 'WorldMemory');
+    return landmarks['HomeBase'];
+  }
+
+  getMasterHouse(serverKey) {
+    const landmarks = this.getLandmarks(serverKey);
+    return landmarks['MasterHouse'] || null;
+  }
+
+  setMasterHouse(serverKey, coords, description = 'บ้านคุณไนท์ทูมู (Nice2MU)') {
+    return this.saveLandmark(serverKey, 'MasterHouse', coords, description);
+  }
+
   // =========================================================================
   // 📦 2. Chests Registry
   // =========================================================================
@@ -161,7 +195,11 @@ class WorldMemoryManager {
     return this._readAtomicJson(filePath, {});
   }
 
-  updateChest(serverKey, coords, items = [], label = '') {
+  saveChest(serverKey, coords, items = [], label = '', category = null) {
+    return this.updateChest(serverKey, coords, items, label, category);
+  }
+
+  updateChest(serverKey, coords, items = [], label = '', category = null) {
     const resolvedKey = this._resolveServerKey(serverKey);
     const key = `${Math.floor(coords.x)}_${Math.floor(coords.y)}_${Math.floor(coords.z)}`;
     const filePath = path.join(this._getWorldDir(resolvedKey), 'chests.json');
@@ -173,12 +211,24 @@ class WorldMemoryManager {
         z: Math.floor(coords.z),
       },
       label: label || (chests[key]?.label || 'Storage Chest'),
+      category: category || chests[key]?.category || null,
       items: items.map(i => ({ name: i.name, count: i.count })),
       updated_at: new Date().toISOString(),
     };
     this._writeAtomicJson(filePath, chests);
     logger.info(`📦 Updated chest at (${coords.x}, ${coords.y}, ${coords.z}) with ${items.length} item types in server [${resolvedKey}]`, 'WorldMemory');
     return chests[key];
+  }
+
+  getChestsByCategory(serverKey, category) {
+    const chests = Object.values(this.getChests(serverKey));
+    if (!category) return chests;
+    const cleanCat = category.toLowerCase();
+    return chests.filter(c => {
+      if (c.category && c.category.toLowerCase().includes(cleanCat)) return true;
+      if (c.label && c.label.toLowerCase().includes(cleanCat)) return true;
+      return false;
+    });
   }
 
   findNearestChest(serverKey, coords) {
@@ -197,6 +247,37 @@ class WorldMemoryManager {
       }
     }
     return nearest;
+  }
+
+  // =========================================================================
+  // 🧭 2.5. Experience Journal & Hazard Areas
+  // =========================================================================
+
+  getExperienceJournal(serverKey) {
+    const resolvedKey = this._resolveServerKey(serverKey);
+    const filePath = path.join(this._getWorldDir(resolvedKey), 'experience_journal.json');
+    return this._readAtomicJson(filePath, { hazard_areas: [], reflections: [] });
+  }
+
+  recordHazardArea(serverKey, coords, reason) {
+    const resolvedKey = this._resolveServerKey(serverKey);
+    const filePath = path.join(this._getWorldDir(resolvedKey), 'experience_journal.json');
+    const journal = this.getExperienceJournal(resolvedKey);
+    if (!journal.hazard_areas) journal.hazard_areas = [];
+    const record = {
+      coords: {
+        x: Math.round(coords.x),
+        y: Math.round(coords.y),
+        z: Math.round(coords.z),
+      },
+      reason,
+      timestamp: new Date().toISOString(),
+    };
+    journal.hazard_areas.push(record);
+    if (journal.hazard_areas.length > 30) journal.hazard_areas.shift();
+    this._writeAtomicJson(filePath, journal);
+    logger.info(`⚠️ [ExperienceJournal] Recorded hazard area at (${record.coords.x}, ${record.coords.y}, ${record.coords.z}): ${reason}`, 'WorldMemory');
+    return record;
   }
 
   // =========================================================================
@@ -442,6 +523,43 @@ class WorldMemoryManager {
 
     profiles.updated_at = new Date().toISOString();
     this._writeAtomicJson(filePath, profiles);
+  }
+
+  // =========================================================================
+  // 🏗️ 6. Active Construction Project (Incremental Blueprint Builder)
+  // =========================================================================
+
+  getActiveConstruction(serverKey) {
+    const resolvedKey = this._resolveServerKey(serverKey);
+    const filePath = path.join(this._getWorldDir(resolvedKey), 'active_construction.json');
+    return this._readAtomicJson(filePath, null);
+  }
+
+  saveActiveConstruction(serverKey, projectData) {
+    const resolvedKey = this._resolveServerKey(serverKey);
+    const filePath = path.join(this._getWorldDir(resolvedKey), 'active_construction.json');
+    const data = {
+      ...projectData,
+      updated_at: new Date().toISOString(),
+    };
+    this._writeAtomicJson(filePath, data);
+    logger.info(`🏗️ [WorldMemory] Saved active construction project '${data.blueprint_name}' (progress: ${data.placed_blocks || 0}/${data.total_blocks || 0}) for server [${resolvedKey}]`, 'WorldMemory');
+    return data;
+  }
+
+  clearActiveConstruction(serverKey) {
+    const resolvedKey = this._resolveServerKey(serverKey);
+    const filePath = path.join(this._getWorldDir(resolvedKey), 'active_construction.json');
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        logger.info(`🏗️ [WorldMemory] Cleared completed active construction project for server [${resolvedKey}]`, 'WorldMemory');
+        return true;
+      } catch (e) {
+        logger.warn(`Failed to unlink active_construction.json: ${e.message}`, 'WorldMemory');
+      }
+    }
+    return false;
   }
 }
 

@@ -3,8 +3,8 @@
 # ==========================================================
 
 server:
-  host: "cynthia-literally.tun.ply.gg"
-  port: 16520
+  host: "127.0.0.1"
+  port: 25565
   version: false # false = auto-detect server version dynamically (1.16 - 1.21+)
   auth: "microsoft" # offline (cracked/local) or microsoft
 
@@ -28,7 +28,7 @@ auto_reconnect:
 
 autonomous:
   enabled: true
-  idle_timeout_ms: 2000
+  idle_timeout_ms: 6000
   explore_radius: 16
   gather_drops: true
   auto_eat: true

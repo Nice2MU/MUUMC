@@ -1,0 +1,294 @@
+# =========================================================================
+# 📖 Minecraft Survival Playbook for MuumiuLLM (Living Knowledge Base)
+# =========================================================================
+# Core Philosophy: "ไม่ใช่บอทเล่นเกม แต่เป็น AI คุมบอทเล่นตามสั่ง"
+# The LLM Brain reads this playbook to formulate multi-step sequential plans.
+#
+# Progression Phases:
+#   Phase 0: Day 1 Survival Bootstrap (Wood, Table, Stone Tools, Food)
+#   Phase 1: Master Neighbor Base Settlement (24-64 blocks from Nice2MU)
+#   Phase 2: The Iron Age (Staircase to Y=16, Smelting, Iron Gear, Shield)
+#   Phase 3: Sustainable Settlement & Cottage Construction
+#   Phase 4: Deep Mining & Diamonds (Y=-54, Strip Mine)
+# =========================================================================
+
+version: "1.0.0"
+target_master: "Nice2MU" # คุณไนท์ทูมู
+
+# -------------------------------------------------------------------------
+# 👤 Master Player Relationship & Base Settlement Rules
+# -------------------------------------------------------------------------
+master_rules:
+  priority: 1 # Master orders supersede autonomous survival chores instantly
+  master_usernames:
+    - "Nice2MU"
+    - "ไนท์ทูมู"
+    - "คุณไนท์ทูมู"
+  settlement:
+    min_distance_blocks: 24  # Do NOT build directly on top of Nice2MU's house
+    max_distance_blocks: 64  # Stay within render distance and neighborhood
+    find_flat_terrain: true
+    clear_vegetation: true
+    anchor_name: "HomeBase"
+    sub_anchors:
+      - "main_chest"
+      - "crafting_table"
+      - "furnace"
+      - "bed"
+      - "mine_entrance"
+
+# -------------------------------------------------------------------------
+# 🎒 Pro Gamer Tactics & Survival Habits
+# -------------------------------------------------------------------------
+tactics:
+  # 🗡️ Hotbar Discipline
+  hotbar:
+    slot_0: "sword"          # Slot 1 in UI
+    slot_1: "pickaxe"        # Slot 2 in UI
+    slot_2: "axe"            # Slot 3 in UI
+    slot_3: "shovel"         # Slot 4 in UI
+    slot_7: "torch"          # Slot 8 in UI
+    slot_8: "food"           # Slot 9 in UI
+    offhand: "shield"        # Left hand
+
+  # 🔥 Charcoal Pro-Tip
+  charcoal_trick:
+    description: "If coal ore is not yet found, smelt wood logs in a furnace to produce Charcoal for torches."
+    trigger_condition:
+      has_furnace: true
+      coal_count: 0
+      torch_count_less_than: 4
+      wood_logs_greater_than: 2
+    action: "smelt_item"
+    params:
+      item_name: "oak_log"
+      count: 2
+
+  # ⚙️ Batch Smelting Math
+  smelting:
+    coal_efficiency: 8 # 1 coal smelts 8 items
+    recommendation: "Batch at least 4-8 raw ores per smelting job to save fuel. Use sticks or spare wood planks for small 1-2 item jobs."
+
+  # 🎒 Expedition Readiness Checklist (EDC Check)
+  edc_checklist:
+    trigger: "leaving_base_perimeter" # distance > 24m from HomeBase
+    requirements:
+      pickaxes: 2      # At least 1 main and 1 spare (or cobblestone/sticks)
+      torches: 8       # Minimum torches for cave or mining
+      food: 8          # Saturation food in hotbar
+      free_slots: 10   # Free inventory slots to hold gathered resources
+
+  # ⏰ Sun Clock & Travel Budget
+  sun_clock:
+    expedition_window_max: 6000     # Safe for long expeditions (morning / noon)
+    return_to_base_threshold: 9000  # Late afternoon: stop distant tasks, head home
+    night_time: 12542               # Bed sleeping window opens
+
+# -------------------------------------------------------------------------
+# 📦 Smart Storage Categorization at HomeBase
+# -------------------------------------------------------------------------
+chest_categories:
+  Chest_Blocks:
+    label: "📦 หีบเก็บหินและบล็อกก่อสร้าง"
+    items:
+      - "cobblestone"
+      - "cobbled_deepslate"
+      - "dirt"
+      - "stone"
+      - "diorite"
+      - "granite"
+      - "andesite"
+      - "sand"
+      - "gravel"
+      - "tuff"
+  Chest_Nature:
+    label: "🪵 หีบเก็บไม้และผลิตผลธรรมชาติ"
+    items:
+      - "oak_log"
+      - "birch_log"
+      - "spruce_log"
+      - "oak_planks"
+      - "birch_planks"
+      - "spruce_planks"
+      - "stick"
+      - "sapling"
+      - "wheat"
+      - "bread"
+      - "apple"
+      - "cooked_beef"
+      - "cooked_porkchop"
+      - "cooked_mutton"
+      - "cooked_chicken"
+      - "seeds"
+  Chest_Treasures:
+    label: "💎 หีบเก็บแร่และอุปกรณ์มีค่า"
+    items:
+      - "raw_iron"
+      - "iron_ingot"
+      - "coal"
+      - "charcoal"
+      - "raw_copper"
+      - "copper_ingot"
+      - "raw_gold"
+      - "gold_ingot"
+      - "diamond"
+      - "bucket"
+      - "water_bucket"
+      - "iron_pickaxe"
+      - "iron_sword"
+      - "shield"
+
+# -------------------------------------------------------------------------
+# 🗺️ Progression Phases & Sequential Steps
+# -------------------------------------------------------------------------
+phases:
+  phase_0:
+    id: "phase_0_bootstrap"
+    title: "Phase 0: Day 1 Survival Bootstrap (ตั้งไข่วันแรก)"
+    description: "รวบรวมไม้ คราฟต์โต๊ะคราฟต์ อุปกรณ์ไม้ ขุดหิน คราฟต์อุปกรณ์หิน และเตรียมอาหาร"
+    steps:
+      - step_id: 1
+        title: "ตัดไม้รวบรวมท่อนไม้ 16 ท่อน"
+        action: "chop_tree"
+        params: { count: 4 }
+        target_condition:
+          type: "item_count"
+          item_group: "wood_logs"
+          target_count: 16
+      - step_id: 2
+        title: "คราฟต์ Crafting Table และ Wooden Pickaxe"
+        action: "craft_item"
+        params: { item_name: "wooden_pickaxe", count: 1 }
+        target_condition:
+          type: "has_items"
+          items: ["crafting_table", "wooden_pickaxe"]
+      - step_id: 3
+        title: "ขุดหิน Cobblestone 14 ก้อน"
+        action: "mine_stone"
+        params: { count: 6 }
+        target_condition:
+          type: "item_count"
+          item_group: "cobblestone_group"
+          target_count: 14
+      - step_id: 4
+        title: "คราฟต์ Stone Pickaxe, Stone Axe และ เตาเผา (Furnace)"
+        action: "craft_item"
+        params: { item_name: "stone_pickaxe", count: 1 }
+        target_condition:
+          type: "has_items"
+          items: ["stone_pickaxe", "stone_axe", "furnace"]
+
+  phase_1:
+    id: "phase_1_neighbor_base"
+    title: "Phase 1: Master Neighbor Base Settlement (ตั้งแคมป์ข้างบ้านคุณ Nice2MU)"
+    description: "เดินทางไประแวกบ้านของคุณ Nice2MU (ระยะ 24-64 บล็อก) ตั้ง HomeBase, ปักคบไฟ, วางเตา เตียง และหีบ"
+    steps:
+      - step_id: 1
+        title: "เดินทางไปยังพิกัดคุณ Nice2MU และเลือกทำเลตั้งแคมป์ 24-64 บล็อก"
+        action: "establish_base"
+        params: { target_master: "Nice2MU", min_distance: 24, max_distance: 64 }
+        target_condition:
+          type: "landmark_exists"
+          landmark: "HomeBase"
+      - step_id: 2
+        title: "วางหีบหลัก (BaseChest) และเก็บของส่วนเกินเคลียร์กระเป๋า"
+        action: "deposit_chest"
+        params: {}
+        target_condition:
+          type: "free_slots"
+          min_free_slots: 16
+      - step_id: 3
+        title: "เตรียมคบไฟและติดไฟรอบแคมป์ป้องกันมอนสเตอร์"
+        action: "craft_item"
+        params: { item_name: "torch", count: 8 }
+        target_condition:
+          type: "item_count"
+          item: "torch"
+          target_count: 8
+
+  phase_2:
+    id: "phase_2_iron_age"
+    title: "Phase 2: The Iron Age (ยุคเหล็ก)"
+    description: "ขุดบันไดลงไปที่ Y=16 ขุดแร่เหล็กดิบ 16-24 ชิ้น กลับมาเผาที่เตา และคราฟต์ชุดเกราะเหล็ก โล่ และที่ขุดเหล็ก"
+    steps:
+      - step_id: 1
+        title: "ขุดบันไดเฉียง 1x2 ลงไปที่ระดับแร่เหล็ก Y=16"
+        action: "staircase_mine"
+        params: { target_y: 16 }
+        target_condition:
+          type: "position_y"
+          operator: "<="
+          target_y: 18
+      - step_id: 2
+        title: "ขุดแร่เหล็ก (Raw Iron) ให้ได้อย่างน้อย 16 ก้อน"
+        action: "mine_ore"
+        params: { ore_type: "iron", count: 4 }
+        target_condition:
+          type: "item_count"
+          item_group: "iron_ores_or_ingots"
+          target_count: 16
+      - step_id: 3
+        title: "เดินทางกลับมาที่ HomeBase และหลอมแร่เหล็กในเตาเผา"
+        action: "smelt_item"
+        params: { item_name: "raw_iron", count: 16 }
+        target_condition:
+          type: "item_count"
+          item: "iron_ingot"
+          target_count: 12
+      - step_id: 4
+        title: "คราฟต์ Iron Pickaxe, โล่ (Shield), ถังน้ำ (Bucket) และดาบเหล็ก"
+        action: "craft_item"
+        params: { item_name: "iron_pickaxe", count: 1 }
+        target_condition:
+          type: "has_items"
+          items: ["iron_pickaxe", "shield", "bucket"]
+
+  phase_3:
+    id: "phase_3_sustainable_settlement"
+    title: "Phase 3: Sustainable Settlement (สร้างบ้านพักถาวรข้างบ้านคุณไนท์)"
+    description: "สร้างบ้านพักหลังน้อยน่ารักข้างบ้านคุณไนท์ทูมู ทำฟาร์มข้าวสาลี และจัดระเบียบหีบคู่"
+    steps:
+      - step_id: 1
+        title: "รวบรวมท่อนไม้และหินสำหรับก่อสร้างบ้านพัก"
+        action: "chop_tree"
+        params: { count: 8 }
+        target_condition:
+          type: "item_count"
+          item_group: "solid_building_blocks"
+          target_count: 48
+      - step_id: 2
+        title: "ออกแบบและก่อสร้างบ้านพักส่วนตัวที่ HomeBase"
+        action: "design_and_build"
+        params: { theme: "กระท่อมน้อยอบอุ่นข้างบ้านคุณไนท์", scale: "compact_starter" }
+        target_condition:
+          type: "landmark_exists"
+          landmark: "MainHouse"
+
+  phase_4:
+    id: "phase_4_deep_mining_diamonds"
+    title: "Phase 4: Deep Mining & Diamonds (ดำดิ่งขุดหาเพชร Y=-54)"
+    description: "ขุดบันไดลงไปที่ Y=-54 ขุดเหมืองแบบก้างปลาเพื่อค้นหาแร่เพชร"
+    steps:
+      - step_id: 1
+        title: "ตรวจความพร้อม EDC และขุดบันไดลงไปที่ Y=-54"
+        action: "staircase_mine"
+        params: { target_y: -54 }
+        target_condition:
+          type: "position_y"
+          operator: "<="
+          target_y: -52
+      - step_id: 2
+        title: "ขุดเหมืองสาขาก้างปลา (Branch Mining) ค้นหาเพชร"
+        action: "branch_mine"
+        params: { length: 20 }
+        target_condition:
+          type: "item_count"
+          item: "diamond"
+          target_count: 3
+      - step_id: 3
+        title: "คราฟต์ Diamond Pickaxe"
+        action: "craft_item"
+        params: { item_name: "diamond_pickaxe", count: 1 }
+        target_condition:
+          type: "has_items"
+          items: ["diamond_pickaxe"]

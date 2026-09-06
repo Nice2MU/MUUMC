@@ -2,7 +2,7 @@
 # AI Provider Configuration Template for muu-mc
 # ==========================================================
 
-active_provider: "openrouter"
+active_provider: "ollama"
 
 ollama:
   base_url: "http://127.0.0.1:11434"

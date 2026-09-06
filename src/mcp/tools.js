@@ -256,8 +256,8 @@ const TOOL_DEFINITIONS = [
         },
         creative_fulfill: {
           type: 'boolean',
-          default: true,
-          description: 'Whether to automatically fulfill required BOM items in Creative mode.',
+          default: false,
+          description: 'Whether to automatically fulfill required BOM items if currently in Creative mode (defaults to false).',
         },
       },
       required: ['blueprint_name'],
@@ -346,36 +346,59 @@ class MCPToolHandler {
 
     // 1. Direct Skill Execution (from LLM Cognitive Planner - 0ms regex overhead)
     if (directAction) {
-      if (directAction === 'design_and_build' || directAction === 'build_structure') {
+      if (directAction === 'design_and_build' || directAction === 'build_structure' || directAction === 'resume_construction') {
         const { structureBuilder, aiArchitect } = require('../builder');
         const { worldMemory } = require('../memory/world_memory');
         const serverKey = botClient.getServerIdentifier();
+        const activeProject = worldMemory.getActiveConstruction(serverKey);
 
         let bpName = args.params?.blueprint_name;
+        let coords = args.params?.coords;
+        let clearSite = args.params?.clear_site !== false;
+        let isResume = directAction === 'resume_construction';
+
+        if (directAction === 'resume_construction' || (!bpName && activeProject)) {
+          if (activeProject) {
+            bpName = activeProject.blueprint_name;
+            coords = activeProject.origin;
+            clearSite = false;
+            isResume = true;
+            logger.info(`🏗️ [Autonomous Engine] Resuming active construction project '${bpName}' at (${coords.x}, ${coords.y}, ${coords.z})...`, 'MCPTools');
+          }
+        }
+
         if (!bpName || directAction === 'design_and_build') {
+          if (adapter && adapter.isUnderground && adapter.isUnderground()) {
+            logger.info('🏔️ [Builder] Bot is underground. Ascending to open surface before designing & building shelter...', 'MCPTools');
+            if (botClient.dsl) {
+              await botClient.dsl.goToSurface();
+            }
+          }
           const theme = args.params?.theme || 'บ้านพักอบอุ่นพร้อมเตียงนอนและประตูทางเข้า';
-          const designed = await aiArchitect.designBlueprint(theme);
+          const invSummary = adapter ? (typeof adapter.getInventorySummary === 'function' ? adapter.getInventorySummary() : { materials: Object.fromEntries((adapter.getInventory ? adapter.getInventory() : []).map(i => [i.name, i.count])) }) : null;
+          const availableMaterials = args.params?.available_materials || invSummary?.materials || {};
+          const scale = args.params?.scale || 'compact_starter';
+          const designed = await aiArchitect.designBlueprint(theme, { availableMaterials, scale });
           bpName = designed.name;
         }
 
         logger.info(`🏗️ [Autonomous Engine] Executing '${directAction}' for '${bpName}'...`, 'MCPTools');
         const buildRes = await structureBuilder.build(botClient, bpName, {
-          clearSite: true,
+          coords,
+          clearSite: clearSite && !isResume,
           useStagingChest: true,
-          creativeFulfill: args.params?.creative_fulfill !== false,
+          resume: isResume,
+          creativeFulfill: args.params?.creative_fulfill === true && botClient.bot?.game?.gameMode === 'creative',
         });
 
-        if (buildRes.origin) {
-          worldMemory.setLandmark('MainHouse', buildRes.origin.x, buildRes.origin.y, buildRes.origin.z, `AI Designed Home: ${bpName}`, serverKey);
-          worldMemory.recordDiaryEvent(serverKey, 'สร้างบ้านพักสำเร็จ', `สร้างบ้าน ${bpName} เสร็จสมบูรณ์แล้ว`, 'love_eye');
-        }
-
         return {
-          status: 'success',
+          status: buildRes.status || (buildRes.success ? 'success' : 'failed'),
           source: 'autonomous_builder',
           blueprint_name: bpName,
           placed_count: buildRes.placedCount,
-          message: `สร้างบ้าน '${bpName}' สำเร็จเรียบร้อยแล้ว (${buildRes.placedCount} บล็อก)!`,
+          total_blocks: buildRes.totalBlocks,
+          missing_materials: buildRes.missingMaterials || null,
+          message: buildRes.message || (buildRes.completed ? `สร้างบ้าน '${bpName}' สำเร็จเรียบร้อยแล้ว (${buildRes.placedCount} บล็อก)!` : `ดำเนินการสร้าง '${bpName}' (${buildRes.placedCount}/${buildRes.totalBlocks} บล็อก)`),
         };
       }
 
@@ -471,6 +494,31 @@ class MCPToolHandler {
         adapter,
         args,
       });
+
+      // Auto-persist newly generated code if task is novel and execution succeeded
+      if (isCustomTask || !directAction) {
+        try {
+          const cleanSlug = (task || 'task')
+            .toLowerCase()
+            .replace(/[^\w\u0E00-\u0E7F]+/g, '_')
+            .slice(0, 32)
+            .replace(/^_+|_+$/g, '');
+          const newSkillName = `skill_${cleanSlug || Date.now()}`;
+          skillManager.registerSkill(
+            newSkillName,
+            {
+              description: task,
+              category: 'dynamic_learned',
+              parameters: args,
+            },
+            generatedCode
+          );
+          logger.info(`💾 Agent 2 automatically persisted newly verified skill: '${newSkillName}'`, 'MCPTools');
+        } catch (saveErr) {
+          logger.debug(`Could not auto-register skill: ${saveErr.message}`, 'MCPTools');
+        }
+      }
+
       return {
         status: 'success',
         source: 'ai_coder',
@@ -499,6 +547,30 @@ class MCPToolHandler {
         fixSummary: 'Self-healed 1-shot repair',
         repairedCode: healedResult.repaired_code,
       });
+
+      // Auto-persist healed code to skillManager
+      if (healedResult.repaired_code) {
+        try {
+          const cleanSlug = (task || 'healed_task')
+            .toLowerCase()
+            .replace(/[^\w\u0E00-\u0E7F]+/g, '_')
+            .slice(0, 32)
+            .replace(/^_+|_+$/g, '');
+          const healedSkillName = `healed_${cleanSlug || Date.now()}`;
+          skillManager.registerSkill(
+            healedSkillName,
+            {
+              description: task,
+              category: 'healed_learned',
+              parameters: args,
+            },
+            healedResult.repaired_code
+          );
+          logger.info(`💾 Agent 2 automatically persisted healed skill: '${healedSkillName}'`, 'MCPTools');
+        } catch (saveErr) {
+          logger.debug(`Could not auto-register healed skill: ${saveErr.message}`, 'MCPTools');
+        }
+      }
 
       return {
         status: 'success',
@@ -717,7 +789,7 @@ class MCPToolHandler {
       rotation: args.rotation || 0,
       clearSite: args.clear_site !== false,
       useStagingChest: args.use_staging_chest !== false,
-      creativeFulfill: args.creative_fulfill !== false,
+      creativeFulfill: args.creative_fulfill === true && botClient.bot?.game?.gameMode === 'creative',
     });
 
     return {

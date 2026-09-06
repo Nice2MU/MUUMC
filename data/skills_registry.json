@@ -4,8 +4,14 @@
     "description": "Follows the specified player or nearest player safely",
     "category": "movement",
     "parameters": {
-      "target_player": { "type": "string", "description": "Username of player to follow" },
-      "range": { "type": "number", "default": 2.0 }
+      "target_player": {
+        "type": "string",
+        "description": "Username of player to follow"
+      },
+      "range": {
+        "type": "number",
+        "default": 2
+      }
     },
     "file": "follow_player.js"
   },
@@ -14,7 +20,10 @@
     "description": "Scans and collects nearby dropped items and loot",
     "category": "gathering",
     "parameters": {
-      "radius": { "type": "number", "default": 16 }
+      "radius": {
+        "type": "number",
+        "default": 16
+      }
     },
     "file": "collect_drops.js"
   },
@@ -23,8 +32,14 @@
     "description": "Crafts an item with automated crafting table lifecycle",
     "category": "crafting",
     "parameters": {
-      "item_name": { "type": "string", "required": true },
-      "count": { "type": "number", "default": 1 }
+      "item_name": {
+        "type": "string",
+        "required": true
+      },
+      "count": {
+        "type": "number",
+        "default": 1
+      }
     },
     "file": "craft_item.js"
   },
@@ -33,7 +48,10 @@
     "description": "Chops nearby trees and replants saplings",
     "category": "gathering",
     "parameters": {
-      "count": { "type": "number", "default": 2 }
+      "count": {
+        "type": "number",
+        "default": 2
+      }
     },
     "file": "chop_tree.js"
   },
@@ -49,7 +67,10 @@
     "description": "Mines nearby stone blocks safely",
     "category": "gathering",
     "parameters": {
-      "count": { "type": "number", "default": 4 }
+      "count": {
+        "type": "number",
+        "default": 4
+      }
     },
     "file": "mine_stone.js"
   },
@@ -58,7 +79,10 @@
     "description": "Guards the perimeter against hostile mobs",
     "category": "combat",
     "parameters": {
-      "radius": { "type": "number", "default": 16 }
+      "radius": {
+        "type": "number",
+        "default": 16
+      }
     },
     "file": "defend_area.js"
   },
@@ -74,8 +98,14 @@
     "description": "Mines specific ores or staircase mines towards target level",
     "category": "gathering",
     "parameters": {
-      "ore_type": { "type": "string", "default": "iron" },
-      "count": { "type": "number", "default": 4 }
+      "ore_type": {
+        "type": "string",
+        "default": "iron"
+      },
+      "count": {
+        "type": "number",
+        "default": 4
+      }
     },
     "file": "mine_ore.js"
   },
@@ -84,8 +114,14 @@
     "description": "Smelts raw ores or food in furnace",
     "category": "crafting",
     "parameters": {
-      "item_name": { "type": "string", "default": "raw_iron" },
-      "count": { "type": "number", "default": 1 }
+      "item_name": {
+        "type": "string",
+        "default": "raw_iron"
+      },
+      "count": {
+        "type": "number",
+        "default": 1
+      }
     },
     "file": "smelt_item.js"
   },
@@ -94,7 +130,10 @@
     "description": "Mines a diagonal 1x2 staircase down to target depth",
     "category": "gathering",
     "parameters": {
-      "target_y": { "type": "number", "default": 16 }
+      "target_y": {
+        "type": "number",
+        "default": 16
+      }
     },
     "file": "staircase_mine.js"
   },
@@ -117,9 +156,18 @@
     "description": "Navigates to previously remembered ore coordinates and harvests them",
     "category": "gathering",
     "parameters": {
-      "x": { "type": "number", "required": true },
-      "y": { "type": "number", "required": true },
-      "z": { "type": "number", "required": true }
+      "x": {
+        "type": "number",
+        "required": true
+      },
+      "y": {
+        "type": "number",
+        "required": true
+      },
+      "z": {
+        "type": "number",
+        "required": true
+      }
     },
     "file": "mine_remembered_ore.js"
   },
@@ -128,7 +176,10 @@
     "description": "Wanders around the terrain within a given radius safely",
     "category": "movement",
     "parameters": {
-      "radius": { "type": "number", "default": 18 }
+      "radius": {
+        "type": "number",
+        "default": 18
+      }
     },
     "file": "explore_terrain.js"
   },
@@ -137,9 +188,18 @@
     "description": "Fishbone / branch mining pattern at current level",
     "category": "gathering",
     "parameters": {
-      "length": { "type": "number", "default": 15 },
-      "spacing": { "type": "number", "default": 3 },
-      "branch_length": { "type": "number", "default": 6 }
+      "length": {
+        "type": "number",
+        "default": 15
+      },
+      "spacing": {
+        "type": "number",
+        "default": 3
+      },
+      "branch_length": {
+        "type": "number",
+        "default": 6
+      }
     },
     "file": "branch_mine.js"
   },
@@ -148,8 +208,14 @@
     "description": "Explores nearby cave system, torches dark areas and collects exposed ores",
     "category": "gathering",
     "parameters": {
-      "max_steps": { "type": "number", "default": 25 },
-      "duration_sec": { "type": "number", "default": 60 }
+      "max_steps": {
+        "type": "number",
+        "default": 25
+      },
+      "duration_sec": {
+        "type": "number",
+        "default": 60
+      }
     },
     "file": "explore_cave.js"
   },
@@ -158,7 +224,10 @@
     "description": "2x1 safe vertical shaft mining down to target Y level",
     "category": "gathering",
     "parameters": {
-      "target_y": { "type": "number", "default": 16 }
+      "target_y": {
+        "type": "number",
+        "default": 16
+      }
     },
     "file": "shaft_mine.js"
   },
@@ -167,7 +236,10 @@
     "description": "Mines a straight horizontal tunnel at current level",
     "category": "gathering",
     "parameters": {
-      "length": { "type": "number", "default": 18 }
+      "length": {
+        "type": "number",
+        "default": 18
+      }
     },
     "file": "strip_mine.js"
   },
@@ -183,8 +255,14 @@
     "description": "Hunts nearby passive animals (chicken, cow, pig, sheep) for food and drops",
     "category": "survival",
     "parameters": {
-      "animal_type": { "type": "string", "default": "chicken" },
-      "radius": { "type": "number", "default": 20 }
+      "animal_type": {
+        "type": "string",
+        "default": "chicken"
+      },
+      "radius": {
+        "type": "number",
+        "default": 20
+      }
     },
     "file": "hunt_animal.js"
   },
@@ -193,7 +271,10 @@
     "description": "Navigates to a recorded landmark from spatial memory (e.g. SurfaceSpawn, MineEntrance, HomeBed, LastDeathPoint)",
     "category": "movement",
     "parameters": {
-      "landmark_name": { "type": "string", "default": "SurfaceSpawn" }
+      "landmark_name": {
+        "type": "string",
+        "default": "SurfaceSpawn"
+      }
     },
     "file": "navigate_landmark.js"
   },
@@ -203,5 +284,54 @@
     "category": "gathering",
     "parameters": {},
     "file": "deposit_chest.js"
+  },
+  "healed_มูมิวพยายามปรุงเนื้อไก่แต่ล้มเหล": {
+    "name": "healed_มูมิวพยายามปรุงเนื้อไก่แต่ล้มเหล",
+    "description": "มูมิวพยายามปรุงเนื้อไก่แต่ล้มเหลวเพราะใช้ชื่อ 'raw_chicken' ซึ่งใน inventory ระบุว่า 'chicken' มูมิวจะลองใช้ชื่อ 'chicken' เพื่อปรุงอาหารให้เสร็จสิ้นก่อนเดินทางกลับบ้านค่า",
+    "category": "healed_learned",
+    "parameters": {
+      "action": "smelt_item",
+      "params": {
+        "item_name": "chicken",
+        "count": 1
+      },
+      "task": "มูมิวพยายามปรุงเนื้อไก่แต่ล้มเหลวเพราะใช้ชื่อ 'raw_chicken' ซึ่งใน inventory ระบุว่า 'chicken' มูมิวจะลองใช้ชื่อ 'chicken' เพื่อปรุงอาหารให้เสร็จสิ้นก่อนเดินทางกลับบ้านค่า"
+    },
+    "file": "healed_มูมิวพยายามปรุงเนื้อไก่แต่ล้มเหล.js",
+    "created_at": "2026-09-06T07:22:33.869Z"
+  },
+  "healed_บ้านสร้างไปได้_88_แล้ว_แต่ยังขาด": {
+    "name": "healed_บ้านสร้างไปได้_88_แล้ว_แต่ยังขาด",
+    "description": "บ้านสร้างไปได้ 88% แล้ว แต่ยังขาดประตู หีบ เตียง กระจก และคบไฟ มูมิวมีไม้ Birch Log 4 บล็อก ซึ่งไม่พอสำหรับคราฟต์ของทั้งหมดนี้ มูมิวจะตัดไม้เพิ่มเพื่อให้มีทรัพยากรเพียงพอในการคราฟต์วัสดุที่เหลือค่ะ",
+    "category": "healed_learned",
+    "parameters": {
+      "action": "chop_tree",
+      "params": {
+        "count": 4
+      },
+      "task": "บ้านสร้างไปได้ 88% แล้ว แต่ยังขาดประตู หีบ เตียง กระจก และคบไฟ มูมิวมีไม้ Birch Log 4 บล็อก ซึ่งไม่พอสำหรับคราฟต์ของทั้งหมดนี้ มูมิวจะตัดไม้เพิ่มเพื่อให้มีทรัพยากรเพียงพอในการคราฟต์วัสดุที่เหลือค่ะ"
+    },
+    "file": "healed_บ้านสร้างไปได้_88_แล้ว_แต่ยังขาด.js",
+    "created_at": "2026-09-06T08:00:25.657Z"
+  },
+  "establish_base": {
+    "name": "establish_base",
+    "description": "Scouts a flat plot 24-64 blocks from Nice2MU and establishes HomeBase with core camp anchors",
+    "category": "building",
+    "parameters": {
+      "target_master": {
+        "type": "string",
+        "default": "Nice2MU"
+      },
+      "min_distance": {
+        "type": "number",
+        "default": 24
+      },
+      "max_distance": {
+        "type": "number",
+        "default": 64
+      }
+    },
+    "file": "establish_base.js"
   }
 }

@@ -11,7 +11,7 @@ const { SYSTEM_PROMPT } = require('./agent');
 
 class SelfHealingDebugger {
   constructor(customConfig = null) {
-    this.aiproviderCfg = config.aiprovider || {};
+    this.aiproviderCfg = config.agent2Provider || config.aiprovider || {};
     this.activeProvider = this.aiproviderCfg.active_provider || 'ollama';
     this.cfg = customConfig || (this.activeProvider === 'openrouter' ? this.aiproviderCfg.openrouter : this.aiproviderCfg.ollama);
     this.baseUrl = this.cfg.base_url || (this.activeProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://127.0.0.1:11434');
