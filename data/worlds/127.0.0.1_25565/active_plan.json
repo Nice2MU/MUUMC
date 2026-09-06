@@ -1,44 +1,42 @@
 {
-  "plan_id": "phase_0_bootstrap",
-  "phase_name": "Phase 0: Day 1 Survival Bootstrap (ตั้งไข่วันแรก)",
-  "description": "รวบรวมไม้ คราฟต์โต๊ะคราฟต์ อุปกรณ์ไม้ ขุดหิน คราฟต์อุปกรณ์หิน และเตรียมอาหาร",
+  "plan_id": "phase_2_iron_age",
+  "phase_name": "Phase 2: The Iron Age (ยุคเหล็ก)",
+  "description": "ขุดบันไดลงไปที่ Y=16 ขุดแร่เหล็กดิบ 16-24 ชิ้น กลับมาเผาที่เตา และคราฟต์ชุดเกราะเหล็ก โล่ และที่ขุดเหล็ก",
   "master_player": "Nice2MU",
-  "created_at": "2026-09-06T11:23:29.225Z",
-  "updated_at": "2026-09-06T11:40:28.839Z",
+  "created_at": "2026-09-06T12:09:18.324Z",
+  "updated_at": "2026-09-06T12:09:18.324Z",
   "current_step_index": 0,
-  "status": "paused_for_master",
+  "status": "in_progress",
   "steps": [
     {
       "step_id": 1,
-      "title": "ตัดไม้รวบรวมท่อนไม้ 16 ท่อน",
-      "action": "chop_tree",
+      "title": "ขุดบันไดเฉียง 1x2 ลงไปที่ระดับแร่เหล็ก Y=16",
+      "action": "staircase_mine",
       "params": {
-        "count": 4
+        "target_y": 16
       },
       "target_condition": {
-        "type": "item_count",
-        "item_group": "wood_logs",
-        "target_count": 16
+        "type": "position_y",
+        "operator": "<=",
+        "target_y": 18
       },
       "status": "in_progress",
       "retries": 0,
-      "started_at": "2026-09-06T11:23:29.225Z",
+      "started_at": "2026-09-06T12:09:18.324Z",
       "completed_at": null
     },
     {
       "step_id": 2,
-      "title": "คราฟต์ Crafting Table และ Wooden Pickaxe",
-      "action": "craft_item",
+      "title": "ขุดแร่เหล็ก (Raw Iron) ให้ได้อย่างน้อย 16 ก้อน",
+      "action": "mine_ore",
       "params": {
-        "item_name": "wooden_pickaxe",
-        "count": 1
+        "ore_type": "iron",
+        "count": 4
       },
       "target_condition": {
-        "type": "has_items",
-        "items": [
-          "crafting_table",
-          "wooden_pickaxe"
-        ]
+        "type": "item_count",
+        "item_group": "iron_ores_or_ingots",
+        "target_count": 16
       },
       "status": "pending",
       "retries": 0,
@@ -47,15 +45,16 @@
     },
     {
       "step_id": 3,
-      "title": "ขุดหิน Cobblestone 14 ก้อน",
-      "action": "mine_stone",
+      "title": "เดินทางกลับมาที่ HomeBase และหลอมแร่เหล็กในเตาเผา",
+      "action": "smelt_item",
       "params": {
-        "count": 6
+        "item_name": "raw_iron",
+        "count": 16
       },
       "target_condition": {
         "type": "item_count",
-        "item_group": "cobblestone_group",
-        "target_count": 14
+        "item": "iron_ingot",
+        "target_count": 12
       },
       "status": "pending",
       "retries": 0,
@@ -64,18 +63,18 @@
     },
     {
       "step_id": 4,
-      "title": "คราฟต์ Stone Pickaxe, Stone Axe และ เตาเผา (Furnace)",
+      "title": "คราฟต์ Iron Pickaxe, โล่ (Shield), ถังน้ำ (Bucket) และดาบเหล็ก",
       "action": "craft_item",
       "params": {
-        "item_name": "stone_pickaxe",
+        "item_name": "iron_pickaxe",
         "count": 1
       },
       "target_condition": {
         "type": "has_items",
         "items": [
-          "stone_pickaxe",
-          "stone_axe",
-          "furnace"
+          "iron_pickaxe",
+          "shield",
+          "bucket"
         ]
       },
       "status": "pending",
@@ -84,11 +83,5 @@
       "completed_at": null
     }
   ],
-  "paused_state": {
-    "paused_at": "2026-09-06T11:40:28.839Z",
-    "previous_status": "in_progress",
-    "step_index": 0,
-    "master_order": "Gamerule keep_inventory is now set to: true]",
-    "master_player": "Nice2MU"
-  }
+  "paused_state": null
 }

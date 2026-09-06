@@ -48,11 +48,15 @@ class DriverAdapter {
   }
 
   getHealth() {
-    return this.bot?.health || 20;
+    if (!this.bot) return 20;
+    const hp = typeof this.bot.health === 'number' ? this.bot.health : 20;
+    return Math.round(hp);
   }
 
   getFood() {
-    return this.bot?.food || 20;
+    if (!this.bot) return 20;
+    const food = typeof this.bot.food === 'number' ? this.bot.food : 20;
+    return Math.round(food);
   }
 
   isDead() {

@@ -5,12 +5,11 @@
  * and registers them into worldMemory.
  */
 
-async function establish_base(dsl, world, args) {
-  const targetMaster = args?.target_master || 'Nice2MU';
-  const minDistance = args?.min_distance || 24;
-  const maxDistance = args?.max_distance || 64;
-  const serverKey = dsl.adapter?.botClient?.getServerIdentifier?.() || null;
-  const rawBot = dsl.adapter?.rawBot;
+const targetMaster = args?.target_master || 'Nice2MU';
+const minDistance = args?.min_distance || 24;
+const maxDistance = args?.max_distance || 64;
+const serverKey = dsl.adapter?.botClient?.getServerIdentifier?.() || null;
+const rawBot = dsl.adapter?.rawBot;
 
 // 1. Locate Master Player Nice2MU or MasterHouse Landmark
 let masterPos = null;
@@ -223,6 +222,3 @@ logger.info(`🏡 [EstablishBase] HomeBase established successfully at (${homePo
     anchors,
     distance_to_master: Math.round(Math.hypot(homePos.x - masterPos.x, homePos.z - masterPos.z)),
   };
-}
-
-module.exports = establish_base;

@@ -232,13 +232,39 @@ class MinecraftBotClient {
     this.bot.on('chat', async (username, message) => {
       if (!username || username === this.bot.username) return;
       const cleanMsg = message.trim();
+
+      // Ignore server system broadcasts, command confirmations, and error echoes
+      const isSystemOrCommand =
+        cleanMsg.startsWith('[Server:') ||
+        cleanMsg.startsWith('[System') ||
+        cleanMsg.startsWith('/') ||
+        cleanMsg.endsWith(']') ||
+        cleanMsg.includes('Gamerule') ||
+        cleanMsg.includes('Set the time') ||
+        cleanMsg.includes('Teleported') ||
+        cleanMsg.includes('Unknown command') ||
+        cleanMsg.includes('game mode') ||
+        cleanMsg.includes('gameMode') ||
+        cleanMsg.includes('Spectator Mode') ||
+        cleanMsg.includes('Creative Mode') ||
+        cleanMsg.includes('Survival Mode') ||
+        cleanMsg.includes('Adventure Mode') ||
+        username.toLowerCase() === 'server';
+
+      if (isSystemOrCommand) {
+        return;
+      }
+
       logger.info(`💬 In-Game Chat from <${username}>: "${cleanMsg}"`, 'InGameChat');
 
-      // Preempt autonomous engine or pause for master
+      // Only preempt autonomous engine if the chat is addressed to Muumiu
+      const lowerMsg = cleanMsg.toLowerCase();
+      const isAddressed = lowerMsg.includes('มูมิว') || lowerMsg.includes('มิว') || lowerMsg.includes('muumiu') || lowerMsg.includes('muu');
+
       const lowerUser = username.toLowerCase();
-      if (lowerUser === 'nice2mu' || lowerUser.includes('nice2mu')) {
+      if ((lowerUser === 'nice2mu' || lowerUser.includes('nice2mu')) && isAddressed) {
         this.autonomousEngine.pauseForMaster(username, cleanMsg);
-      } else {
+      } else if (isAddressed) {
         this.autonomousEngine.preempt();
       }
 

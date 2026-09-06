@@ -457,6 +457,6 @@ When `viewer.enabled: true`, open your web browser at **`http://127.0.0.1:3007`*
     - Raycasts for steep drops $> 3$ blocks and liquid hazards (lava/fire) before stepping forward during wander mode, preventing lethal falls into ravines or magma pools.
 22. **📦 Remote Chunk Unload Protection (`data/skills/deposit_chest.js`)**:
     - Safely navigates near chest coordinates (`goto`) before querying block data, avoiding null pointer crashes across unloaded chunk boundaries.
-
-
-
+23. **🔇 Zero In-Game Text Chat Spam & Integer Telemetry (`src/driver/adapter.js`, `src/bot/state.js`)**:
+    - All autonomous gameplay actions, observations, and banter are voice-only via Simple Voice Chat, eliminating public text chat clutter. In-game text chat is strictly reserved for direct replies to human players.
+    - Health (HP) and food values are strictly rounded to whole numbers (`Math.round()`) across driver, state scanner, and telemetry, eliminating fractional decimal overflow.

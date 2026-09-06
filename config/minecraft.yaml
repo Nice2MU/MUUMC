@@ -28,6 +28,7 @@ auto_reconnect:
 
 autonomous:
   enabled: true
+  mode: "agent1_react"
   idle_timeout_ms: 6000
   explore_radius: 16
   gather_drops: true

@@ -27,20 +27,24 @@ class UniversalSandbox {
       code = mdMatch[1].trim();
     }
 
-    // 2. Unwrap named/anonymous outer async function if whole code is wrapped in it
-    // e.g. async function task(dsl, world, args) { ... } OR async function main(...) { ... }
-    const funcMatch = code.match(/^\s*(?:export\s+default\s+)?async\s+function\s*(?:\w+)?\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
+    // 2. Strip module.exports = ... anywhere at the end or on its own line
+    code = code.replace(/^\s*module\.exports\s*=\s*[\w$]+;?\s*$/gm, '').trim();
+    code = code.replace(/module\.exports\s*=\s*[\w$]+;?\s*$/, '').trim();
+
+    // 3. Unwrap named/anonymous outer async function if whole code is wrapped in it
+    // Handle optional leading multi-line or single-line comments
+    const strippedComments = code.replace(/^\s*\/\*[\s\S]*?\*\/\s*/, '').replace(/^\s*\/\/[^\n]*\n?/gm, '').trim();
+    const funcMatch = strippedComments.match(/^(?:export\s+default\s+)?async\s+function\s*(?:\w+)?\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
     if (funcMatch) {
       code = funcMatch[1].trim();
+    } else {
+      const arrowMatch = strippedComments.match(/^(?:const|let|var)\s+\w+\s*=\s*async\s*\([^)]*\)\s*=>\s*\{([\s\S]*)\};?\s*$/);
+      if (arrowMatch) {
+        code = arrowMatch[1].trim();
+      }
     }
 
-    // 3. Unwrap arrow function wrapper: const task = async (...) => { ... }
-    const arrowMatch = code.match(/^\s*(?:const|let|var)\s+\w+\s*=\s*async\s*\([^)]*\)\s*=>\s*\{([\s\S]*)\};?\s*$/);
-    if (arrowMatch) {
-      code = arrowMatch[1].trim();
-    }
-
-    // 4. Strip module.exports = ...
+    // 4. Strip any remaining module.exports or exports references
     code = code.replace(/^\s*module\.exports\s*=\s*/, '').trim();
 
     return code;
@@ -64,13 +68,14 @@ class UniversalSandbox {
 
     try {
       const { Vec3 } = require('vec3');
-      // Create isolated sandbox function with rich parameter scope
-      const sandboxFn = new AsyncFunction('dsl', 'world', 'args', 'signal', 'Vec3', 'logger', 'adapter', 'bot', `
+      // Create isolated sandbox function with rich parameter scope, including dummy module/exports
+      const sandboxFn = new AsyncFunction('dsl', 'world', 'args', 'signal', 'Vec3', 'logger', 'adapter', 'bot', 'module', 'exports', `
         if (signal.aborted) throw new Error('Execution aborted prior to start');
         ${code}
       `);
 
-      const executionPromise = sandboxFn(dsl, world, args, controller.signal, Vec3, logger, dsl?.adapter || null, dsl?.adapter?.rawBot || null);
+      const dummyModule = { exports: {} };
+      const executionPromise = sandboxFn(dsl, world, args, controller.signal, Vec3, logger, dsl?.adapter || null, dsl?.adapter?.rawBot || null, dummyModule, dummyModule.exports);
       
       const timeoutPromise = new Promise((_, reject) => {
         controller.signal.addEventListener('abort', () => {

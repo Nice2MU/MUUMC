@@ -269,7 +269,20 @@ class MCPToolHandler {
   static async handleToolCall(name, args, isAutonomous = false) {
     logger.info(`⚡ Handling MCP Tool: '${name}' with args: ${JSON.stringify(args)}`, 'MCPTools');
 
-    if (!isAutonomous && botClient.autonomousEngine) {
+    const nonPhysicalTools = [
+      'muu_mc_play_tts_voice',
+      'muu_mc_chat_in_game',
+      'muu_mc_get_game_state',
+      'muu_mc_save_landmark',
+      'muu_mc_list_skills',
+      'muu_mc_manage_memory',
+      'muu_mc_get_recent_voice_chats',
+      'muu_mc_list_blueprints',
+      'muu_mc_design_blueprint',
+    ];
+    const isPhysical = !isAutonomous && !nonPhysicalTools.includes(name);
+
+    if (isPhysical && botClient.autonomousEngine) {
       botClient.autonomousEngine.notifyTaskStarted();
     }
 
@@ -303,7 +316,7 @@ class MCPToolHandler {
           throw new Error(`Unknown MCP Tool: ${name}`);
       }
     } finally {
-      if (!isAutonomous && botClient.autonomousEngine) {
+      if (isPhysical && botClient.autonomousEngine) {
         botClient.autonomousEngine.notifyTaskCompleted();
       }
     }
@@ -637,9 +650,41 @@ class MCPToolHandler {
       };
     }
     const state = stateScanner.getBotStatus(detailLevel);
+
+    // Attach active survival plan / milestone context
+    let activePlanInfo = null;
+    if (botClient.autonomousEngine && botClient.autonomousEngine.goalPlanManager) {
+      const serverKey = botClient.getServerIdentifier();
+      const plan = botClient.autonomousEngine.goalPlanManager.loadPlan(serverKey);
+      if (plan) {
+        let currStep = botClient.autonomousEngine.goalPlanManager.getCurrentStep();
+        if (currStep && botClient.autonomousEngine.situationEvaluator) {
+          const targetCheck = botClient.autonomousEngine.situationEvaluator.evaluateStepTarget(currStep);
+          if (targetCheck && targetCheck.met) {
+            logger.info(`🎯 [SituationEvaluator] Target satisfied: ${targetCheck.summary}. Advancing step...`, 'MCPTools');
+            botClient.autonomousEngine.goalPlanManager.advanceStep(serverKey, targetCheck.summary);
+            currStep = botClient.autonomousEngine.goalPlanManager.getCurrentStep();
+          }
+          activePlanInfo = {
+            phase_name: plan.phase_name,
+            current_step_index: plan.current_step_index,
+            total_steps: plan.steps?.length || 0,
+            current_step: currStep ? {
+              title: currStep.title,
+              action: currStep.action,
+              params: currStep.params,
+              target_condition: currStep.target_condition,
+              target_summary: targetCheck?.summary || null,
+            } : null,
+          };
+        }
+      }
+    }
+
     return {
       status: 'success',
       server: botClient.getServerIdentifier(),
+      active_plan: activePlanInfo,
       ...state,
     };
   }

@@ -4,9 +4,8 @@
  * Prioritizes HomeBase main chest / categorized chests before falling back to local deploy.
  */
 
-async function deposit_chest(dsl, world, args) {
-  const pos = dsl.adapter ? dsl.adapter.getPosition() : bot.entity.position;
-  const serverKey = dsl.adapter?.botClient?.getServerIdentifier?.() || null;
+const pos = dsl.adapter ? dsl.adapter.getPosition() : bot.entity.position;
+const serverKey = dsl.adapter?.botClient?.getServerIdentifier?.() || null;
 
   // 0. Pre-emptively clean inventory if free slots are critically low (<= 2)
   const freeSlots = dsl.adapter.countFreeSlots ? dsl.adapter.countFreeSlots() : (dsl.adapter.rawBot?.inventory ? dsl.adapter.rawBot.inventory.emptySlotCount() : 0);
@@ -124,6 +123,3 @@ async function deposit_chest(dsl, world, args) {
     return { success: true };
   }
   return { success: false, error: 'Chest block not accessible' };
-}
-
-module.exports = deposit_chest;

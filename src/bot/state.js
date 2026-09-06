@@ -4,6 +4,7 @@
  */
 
 const { Vec3 } = require('vec3');
+const { worldMemory } = require('../memory/world_memory');
 
 class GameStateScanner {
   constructor(adapter, resolver, watchdog) {
@@ -14,9 +15,62 @@ class GameStateScanner {
 
   getBotStatus(detailLevel = 'summary') {
     const pos = this.adapter.getPosition();
-    const hp = this.adapter.getHealth();
-    const food = this.adapter.getFood();
+    const hp = Math.round(this.adapter.getHealth());
+    const food = Math.round(this.adapter.getFood());
     const bot = this.adapter.rawBot;
+
+    // Environmental detection
+    const isUnderground = this.adapter.isUnderground ? this.adapter.isUnderground() : pos.y < 55;
+    const headBlock = this.adapter.getBlockAt ? this.adapter.getBlockAt(new Vec3(Math.floor(pos.x), Math.floor(pos.y + 1.6), Math.floor(pos.z))) : null;
+    const feetBlock = this.adapter.getBlockAt ? this.adapter.getBlockAt(new Vec3(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z))) : null;
+    const isInWater = (headBlock && headBlock.name.includes('water')) || (feetBlock && feetBlock.name.includes('water')) || bot?.entity?.isInWater || false;
+    const isOnFire = bot?.entity?.isOnFire || false;
+
+    // Master player status (Nice2MU)
+    const masterEntity = this.adapter.findEntity ? this.adapter.findEntity({ name: 'Nice2MU', type: 'player' }) : null;
+    const masterInfo = masterEntity ? {
+      online: true,
+      name: 'Nice2MU',
+      distance: Math.round(this.adapter.distanceTo(masterEntity.position) * 10) / 10,
+      position: {
+        x: Math.round(masterEntity.position.x * 10) / 10,
+        y: Math.round(masterEntity.position.y * 10) / 10,
+        z: Math.round(masterEntity.position.z * 10) / 10,
+      },
+    } : { online: false, name: 'Nice2MU' };
+
+    // HomeBase info
+    const serverKey = this.adapter?.client?.getServerIdentifier ? this.adapter.client.getServerIdentifier() : null;
+    const homeBase = worldMemory ? worldMemory.getHomeBase(serverKey) : null;
+    let homeBaseInfo = null;
+    if (homeBase && homeBase.coords) {
+      const hbVec = new Vec3(homeBase.coords.x, homeBase.coords.y, homeBase.coords.z);
+      homeBaseInfo = {
+        name: homeBase.name || 'HomeBase',
+        coords: homeBase.coords,
+        distance: Math.round(this.adapter.distanceTo(hbVec) * 10) / 10,
+      };
+    }
+
+    // Inventory & resource summaries
+    const inv = this.adapter.getInventory ? this.adapter.getInventory() : [];
+    const vitalCounts = {
+      wood_logs: inv.filter(i => i.name.endsWith('_log')).reduce((s, i) => s + i.count, 0),
+      planks: inv.filter(i => i.name.endsWith('_planks')).reduce((s, i) => s + i.count, 0),
+      cobblestone: (this.adapter.countItem('cobblestone') || 0) + (this.adapter.countItem('cobbled_deepslate') || 0),
+      coal: (this.adapter.countItem('coal') || 0) + (this.adapter.countItem('charcoal') || 0),
+      raw_iron: this.adapter.countItem('raw_iron') || 0,
+      iron_ingot: this.adapter.countItem('iron_ingot') || 0,
+      torch: this.adapter.countItem('torch') || 0,
+      food: inv.filter(i => ['bread', 'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken', 'apple', 'baked_potato', 'raw_beef', 'raw_porkchop', 'raw_chicken'].includes(i.name)).reduce((s, i) => s + i.count, 0),
+      beds: inv.filter(i => i.name.endsWith('_bed')).reduce((s, i) => s + i.count, 0),
+    };
+    const tools = {
+      pickaxe: inv.find(i => i.name.endsWith('_pickaxe'))?.name || null,
+      axe: inv.find(i => i.name.endsWith('_axe'))?.name || null,
+      sword: inv.find(i => i.name.endsWith('_sword'))?.name || null,
+      shovel: inv.find(i => i.name.endsWith('_shovel'))?.name || null,
+    };
 
     const baseState = {
       is_ready: this.adapter.isReady(),
@@ -32,11 +86,18 @@ class GameStateScanner {
       is_raining: bot?.isRaining || false,
       time_of_day: bot?.time?.timeOfDay || 0,
       is_night: bot?.time?.isNight || false,
+      is_underground: isUnderground,
+      is_in_water: isInWater,
+      is_on_fire: isOnFire,
+      master: masterInfo,
+      home_base: homeBaseInfo,
+      vital_resources: vitalCounts,
+      tools: tools,
       current_activity: this.getRealtimeActivity(),
     };
 
     if (detailLevel === 'inventory_only' || detailLevel === 'full') {
-      baseState.inventory = this.adapter.getInventory();
+      baseState.inventory = inv;
       baseState.free_slots = this.watchdog.getFreeSlots();
       baseState.held_item = this.adapter.getHeldItem()?.name || null;
     }

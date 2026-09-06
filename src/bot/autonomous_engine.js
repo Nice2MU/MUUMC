@@ -33,6 +33,7 @@ class AutonomousEngine {
 
     this._cfg = (client?.config?.autonomous) || config.minecraft?.autonomous || {
       enabled: true,
+      mode: 'agent1_react',
       idle_timeout_ms: 6000,
       explore_radius: 24,
       auto_eat: true,
@@ -103,6 +104,13 @@ class AutonomousEngine {
       }
     }
 
+    // Auto-resume if plan was left in paused_for_master on disk from a previous session
+    const activePlan = this.goalPlanManager.loadPlan(this.serverKey);
+    if (activePlan && activePlan.status === 'paused_for_master') {
+      logger.info('🔄 [AI Gamer Brain] Auto-resuming plan from previous session pause state...', 'AutonomousEngine');
+      this.resumeFromMaster();
+    }
+
     // Cognitive / Execution Loop Tick (Evaluates reflexes, targets, planner)
     this._loopInterval = setInterval(() => {
       this._tick();
@@ -163,6 +171,7 @@ class AutonomousEngine {
   pauseForMaster(playerName = 'Nice2MU', taskDescription = '') {
     logger.info(`👑 [Master Preemption] Master <${playerName}> commanded: "${taskDescription}". Pausing survival plan!`, 'AutonomousEngine');
     this.isPausedForMaster = true;
+    this._pausedForMasterTime = Date.now();
     this.preempt();
     this.goalPlanManager.pauseForMaster(this.serverKey, playerName, taskDescription);
   }
@@ -182,6 +191,10 @@ class AutonomousEngine {
       timestamp: Date.now(),
     };
     this.preempt();
+    this.notifyAgent1Event('tool_depleted', {
+      tool: toolType,
+      message: `อุปกรณ์ ${toolType} พังหรือไม่มีในตัว`,
+    });
   }
 
   reportToolTierInsufficient(blockName, requiredTool = 'iron_pickaxe') {
@@ -192,6 +205,56 @@ class AutonomousEngine {
       timestamp: Date.now(),
     };
     this.preempt();
+  }
+
+  _getTelemetrySnapshot() {
+    try {
+      const adapter = this.client?.adapter;
+      if (!adapter) return null;
+      const pos = adapter.getPosition ? adapter.getPosition() : null;
+      const inv = adapter.getInventory ? adapter.getInventory() : [];
+      const tool = adapter.getActiveToolName ? adapter.getActiveToolName() : null;
+      return {
+        position: pos ? { x: Math.round(pos.x * 10) / 10, y: Math.round(pos.y * 10) / 10, z: Math.round(pos.z * 10) / 10 } : null,
+        health: adapter.getHealth ? adapter.getHealth() : 20,
+        food: adapter.getFood ? adapter.getFood() : 20,
+        active_tool: tool,
+        inventory_summary: inv.slice(0, 10).map(i => `${i.name}x${i.count}`).join(', '),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  notifyAgent1Event(eventType, eventData = {}) {
+    const payload = {
+      event_type: eventType,
+      timestamp: Date.now(),
+      telemetry: this._getTelemetrySnapshot(),
+      ...eventData,
+    };
+
+    logger.info(`📢 [AI Gamer Brain] Emitting Strategic Event to Agent 1: '${eventType}'`, 'AutonomousEngine');
+
+    // 1. Dispatch via MCP Notification to Python Companion (Agent 1)
+    if (this.client?.mcpServer && typeof this.client.mcpServer.notification === 'function') {
+      try {
+        this.client.mcpServer.notification({
+          method: 'notifications/game_event',
+          params: payload,
+        });
+        return;
+      } catch (err) {
+        logger.warn(`Failed to dispatch game_event MCP notification: ${err.message}`, 'AutonomousEngine');
+      }
+    }
+
+    // 2. Direct In-Game Fallback if MCP is not connected
+    if (this.client?.chatCompanion) {
+      if (payload.completed_step) {
+        this.emitBanter(`ทำ "${payload.completed_step}" สำเร็จแล้วค่ะ!`, false);
+      }
+    }
   }
 
   emitBanter(text, isEmergencyOrDiscovery = false) {
@@ -451,7 +514,15 @@ class AutonomousEngine {
       }
     }
 
-    // 3. Active Goal Plan Check ("พอรึยัง?")
+    // 3. Mode check: Agent 1 Incremental ReAct Cognitive Brain
+    // In 'agent1_react' mode, high-level reasoning, speech, and step dispatch
+    // are driven by Agent 1 (companion.py ReAct loop). Fast-path reflexes, sleep, and watchdog remain active here.
+    const mode = this._cfg?.mode || 'agent1_react';
+    if (mode === 'agent1_react') {
+      return;
+    }
+
+    // 4. Active Goal Plan Check ("พอรึยัง?") (Fallback local macro mode)
     let activePlan = this.goalPlanManager.loadPlan(this.serverKey);
 
     // If no active plan or previous plan is complete, adopt next phase plan!
@@ -459,6 +530,11 @@ class AutonomousEngine {
       const nextPhase = this._determineNextPhase();
       if (nextPhase) {
         activePlan = this.goalPlanManager.createPlanFromPhase(this.serverKey, nextPhase);
+        this.notifyAgent1Event('phase_started', {
+          phase: activePlan.phase_name,
+          description: activePlan.description,
+          first_step: activePlan.steps?.[0]?.title || null,
+        });
       }
     }
 
@@ -477,10 +553,18 @@ class AutonomousEngine {
     if (targetCheck.met) {
       // 🎯 Target is satisfied! Advance to the next step!
       logger.info(`🎯 [SituationEvaluator] Target Met! ${targetCheck.summary}. Advancing step...`, 'AutonomousEngine');
+      const completedStepTitle = currentStep.title;
       this.goalPlanManager.advanceStep(this.serverKey, targetCheck.summary);
 
       // Check if there is a next step
       const nextStep = this.goalPlanManager.getCurrentStep();
+      this.notifyAgent1Event('step_completed', {
+        phase: activePlan.phase_name,
+        completed_step: completedStepTitle,
+        summary: targetCheck.summary,
+        next_step: nextStep ? nextStep.title : 'จบเป้าหมายของเฟสนี้แล้ว',
+      });
+
       if (nextStep) {
         await this._executeActiveStep(nextStep);
       }
@@ -522,6 +606,38 @@ class AutonomousEngine {
       return;
     }
 
+    // Safeguard 3: Torch Prerequisite Recovery - If crafting torches but no coal/charcoal
+    const isCraftingTorch = currentStep.action === 'craft_item' && 
+      (currentStep.params?.item_name === 'torch' || currentStep.params?.item === 'torch');
+    if (isCraftingTorch) {
+      const coalCount = adapter.countItem('coal') + adapter.countItem('charcoal');
+      if (coalCount === 0) {
+        // 1. Look for nearby exposed coal ore (within 16 blocks)
+        const nearbyCoal = adapter.findBlocks({ matching: ['coal_ore', 'deepslate_coal_ore'], maxDistance: 16, count: 2 });
+        if (nearbyCoal.length > 0) {
+          logger.info('⛏️ [Torch Safeguard] Nearby coal ore spotted! Mining coal for torches...', 'AutonomousEngine');
+          await this._executeActiveStep({ action: 'mine_ore', params: { ore_type: 'coal', count: 2 }, title: 'ขุดแร่ถ่านหินทำคบไฟ' });
+          return;
+        }
+
+        // 2. Use Charcoal Trick from playbook: smelt 2 logs in furnace to get 2 charcoal!
+        const logTypes = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log'];
+        const currentLogs = logTypes.reduce((sum, l) => sum + adapter.countItem(l), 0);
+        if (currentLogs < 3) {
+          logger.info('🌲 [Torch Safeguard] Gathering wood logs to produce charcoal for torches...', 'AutonomousEngine');
+          await this._executeActiveStep({ action: 'chop_tree', params: { count: 4 }, title: 'ตัดไม้ทำถ่านชาร์โคลสำหรับคบไฟ' });
+          return;
+        }
+
+        const fuelLog = logTypes.find(l => adapter.hasItem(l));
+        if (fuelLog) {
+          logger.info(`🔥 [Torch Safeguard] Smelting ${fuelLog} into charcoal for torches...`, 'AutonomousEngine');
+          await this._executeActiveStep({ action: 'smelt_item', params: { item_name: fuelLog, count: 2 }, title: 'เผาไม้เป็นถ่านชาร์โคล' });
+          return;
+        }
+      }
+    }
+
     logger.info(`⏳ [SituationEvaluator] Working on: "${currentStep.title}" (${targetCheck.summary})`, 'AutonomousEngine');
     await this._executeActiveStep(currentStep);
   }
@@ -530,8 +646,20 @@ class AutonomousEngine {
   // 🚨 ANTI-STALL & LIVENESS WATCHDOG
   // =========================================================================
   async _runWatchdog() {
-    if (!this.isRunning || this._isTaskActive || this.isPausedForMaster) return;
+    if (!this.isRunning) return;
     if (!this.client?.isConnected || !this.client?.isSpawned) return;
+
+    // Auto-resume from Master pause if idle for > 35s without active external task
+    if (this.isPausedForMaster && !this._isTaskActive) {
+      const pausedDuration = Date.now() - (this._pausedForMasterTime || Date.now());
+      if (pausedDuration > 35000) {
+        logger.info('⏰ [Master Preemption] Master idle timeout (35s). Naturally resuming autonomous plan...', 'AutonomousEngine');
+        this.resumeFromMaster();
+        return;
+      }
+    }
+
+    if (this._isTaskActive || this.isPausedForMaster) return;
 
     const adapter = this.client.adapter;
     const dsl = this.client.dsl;
@@ -560,6 +688,10 @@ class AutonomousEngine {
     const timeWithoutMovement = Date.now() - (this._lastWatchdogMoveTime || Date.now());
     if (this.isBusy && timeWithoutMovement > 45000) {
       logger.warn(`🚨 [Watchdog] Stalled for ${(timeWithoutMovement / 1000).toFixed(1)}s! Forcing unstuck hop...`, 'AutonomousEngine');
+      this.notifyAgent1Event('stalled', {
+        duration_sec: Math.round(timeWithoutMovement / 1000),
+        goal: this._currentGoal,
+      });
       this.preempt();
       this.isBusy = false;
       this._busyStartTime = 0;
